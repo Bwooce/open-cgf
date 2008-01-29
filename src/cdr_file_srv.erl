@@ -24,7 +24,15 @@
 	        file_record_limit,
 		file_age_limit_seconds}).
 
--record(file, {source, name, record_size, open_timestamp}).
+-record(file, {source, %% {IP,Port} of sending CDF
+	       possible_duplicate_list, %% [{seq_num, [CDRs]}] of acknowledged but unwritten CDRs. Written eventually even if not confirmed. 
+	       written_seq_nums, %% [] seq_nums in current file, non-duplicates
+	       old_seq_nums_ringbuffer, %% maintain a list of n thousand seq_nums, in case CDF loses an ACK somehow. Sigh.
+	       file_handle, %% currently open file handle, or undefined if none
+	       file_name, 
+	       file_records, %% number of CDR records in file
+	       file_open_timestamp %% time file opened in greg_seconds
+	      }). 
 
 %%====================================================================
 %% API
@@ -39,6 +47,16 @@ start_link() ->
 
 log(Source,Data) -> 
     gen_server:cast(?SERVER, {log, Source, Data}).
+
+log_possible_dup(Source, Seq_num, Data) ->
+    gen_server:cast(?SERVER, {log_possible_dup, Source, Seq_num, Data}).
+
+commit_possible_dup(Source, Seq_num) ->
+    gen_server:cast(?SERVER, {commit_possible_dup, Source, Seq_num}).
+
+remove_possible_dup(Source, Seq_num) ->
+    gen_server:cast(?SERVER, {remove_possible_dup, Source, Seq_num}).
+
 
 
 %%====================================================================

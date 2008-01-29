@@ -30,7 +30,8 @@ else
 DEBUG_FLAGS =
 endif
 
-MODULES=open-cgf open-cgf_app open-cgf_sup cdr_file_srv gtpp_udp_server gtpp_tcp_server gtpp_tcp_connection 
+MODULES=open-cgf open-cgf_app open-cgf_sup cdr_file_srv gtpp_decode gtpp_udp_server 
+# gtpp_tcp_server gtpp_tcp_connection 
 
 
 EBIN_FILES=$(MODULES:%=../ebin/%.$(EMULATOR)) 

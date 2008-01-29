@@ -11,6 +11,7 @@
 
 -define(SERVER, ?MODULE).
 -include("open-cgf.hrl").
+-include("gtp.hrl").
 
 %% API
 -export([start_link/0]).
@@ -76,8 +77,41 @@ handle_cast(_Msg, State) ->
 %%--------------------------------------------------------------------
 handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
     ?PRINTDEBUG2("Got Message ~p from ~p:~p", [Packet, InIP, InPort]),
-    %% decode the header,
-    {noreply, State};
+    %% decode the header, {InIP, Port, SeqNum} forms a unique tuple. I think. How ugly.
+    case gtp_decode:decode_message(Packet) of
+	{ok, {Header, Message}} ->
+	    case Header#gtpp_header.msg_type of
+		data_record_transfer_request ->
+		    {{Type, Content}, _} = Message,
+		    case Type of 
+			send_data_record_packet ->
+			    %% log Content as DRPs [] - cdr_log_srv:log(Message)
+			    %% TODO in the future cdr_file_srv will instigate response when file closed. More efficient to batch them up.
+			    ok;
+			send_potential_duplicate_record_packet ->
+			    ok;
+			cancel_packets ->
+			    ok;
+			release_packets ->
+			    ok
+		    end,
+		    send_data_record_transfer_response(InSocket, {InIP, InPort}, Header),
+		    {noreply, State};
+		node_alive_request ->
+		    {noreply, State};
+		node_alive_response ->
+		    {noreply, State};
+		redirection_response ->
+		    {noreply, State};
+		echo_request ->
+		    {noreply, State};
+		echo_response ->
+		    {noreply, State}
+	    end;
+	{error, Reason} ->
+	    %% Send back error of some kind
+	    {noreply, State}
+    end;
 
 handle_info(_Info, State) ->
     {noreply, State}.
@@ -102,3 +136,5 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 %%% Internal functions
 %%--------------------------------------------------------------------
+send_data_record_transfer_response(InSocket, {InIP, Port}, Header) ->
+    ok.
