@@ -11,6 +11,7 @@
 %% API
 -export([decode_message/1]).
 
+-include("open-cgf.hrl").
 -include("gtp.hrl").
 
 
@@ -148,7 +149,7 @@ decode_ie_data_record_packet(<<252:8,
 			      Len:16, 
 			      Num_records:8,
 			      1:8, %% only ASN.1 BER (!)
-			      Rec_format:16,
+			      Rec_format:2/binary,
 			      Rest/binary>>, _TotalLen) ->
     _Decoded_rec_format = decode_ie_data_record_format_version(Rec_format), %% Not going to do anything special with it right now.
     decode_cdrs(Len, Num_records, Rest).
@@ -176,16 +177,20 @@ decode_ie_data_record_transfer_response() ->
 
 
 decode_cdrs(Total_len, Num_records, Bin) ->
+    ?PRINTDEBUG2("Decoding CDRs, total_len ~p, count ~p",[Total_len, Num_records]),
     decode_cdrs(Total_len, Num_records, Bin, []).
 
-decode_cdrs(_, 0, _, Acc) ->
-    Acc;
-decode_cdrs(0, _, _, Acc) ->
-    Acc;
+decode_cdrs(_, 0, LeftOver, Acc) ->
+    ?PRINTDEBUG("Finished extraction of CDRs"),
+    {Acc, LeftOver};
+decode_cdrs(0, _, LeftOver, Acc) ->
+    {Acc, LeftOver};
 decode_cdrs(Total_len, Num_records, <<Rec_len:16, Rest/binary>>, Acc) ->
-    Bits = Rec_len*8,
-    <<CDR:Bits, Rest2/binary>> = Rest,
-    decode_cdrs(Total_len-Rec_len, Num_records=1, Rest2, Acc ++ [CDR]).
+    ?PRINTDEBUG2("Looking for a CDR of length ~p",[Rec_len]),
+%    Bits = Rec_len*8,
+    <<CDR:Rec_len/binary, Rest2/binary>> = Rest,
+    ?PRINTDEBUG("Extracted CDR"),
+    decode_cdrs(Total_len-Rec_len, Num_records-1, Rest2, Acc ++ [CDR]).
     
 	   
 	    

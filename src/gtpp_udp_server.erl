@@ -78,7 +78,7 @@ handle_cast(_Msg, State) ->
 handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
     ?PRINTDEBUG2("Got Message ~p from ~p:~p", [Packet, InIP, InPort]),
     %% decode the header, {InIP, Port, SeqNum} forms a unique tuple. I think. How ugly.
-    case gtp_decode:decode_message(Packet) of
+    case gtpp_decode:decode_message(Packet) of
 	{ok, {Header, Message}} ->
 	    case Header#gtpp_header.msg_type of
 		data_record_transfer_request ->

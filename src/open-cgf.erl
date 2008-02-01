@@ -11,4 +11,4 @@
 
 start() ->
     application:start('sasl'),
-    application:start('open-cgf').
+    application:start('open-cgf',permanent).
