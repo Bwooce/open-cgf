@@ -1,9 +1,25 @@
 %%%-------------------------------------------------------------------
 %%% File    : gtpp_decode.erl
-%%% Author  : root <root@one.w8trk.com>
+%%% Author  : Bruce Fitzsimons <bruce@fitzsimons.org>
 %%% Description : 
 %%%
-%%% Created : 28 Jan 2008 by root <root@one.w8trk.com>
+%%% Created : 28 Jan 2008 by Bruce Fitzsimons <bruce@fitzsimons.org>
+%%%
+%%% Copyright 2008 Bruce Fitzsimons
+%%%
+%%% This file is part of open-cgf.
+%%%
+%%% open-cgf is free software: you can redistribute it and/or modify
+%%% it under the terms of the GNU General Public License version 2 as
+%%% published by the Free Software Foundation.
+%%%
+%%% open-cgf is distributed in the hope that it will be useful,
+%%% but WITHOUT ANY WARRANTY; without even the implied warranty of
+%%% MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+%%% GNU General Public License for more details.
+%%%
+%%% You should have received a copy of the GNU General Public License
+%%% along with open-cgf.  If not, see <http://www.gnu.org/licenses/>.
 %%%-------------------------------------------------------------------
 -module(gtpp_decode).
 
@@ -28,24 +44,24 @@ decode_GTPP_header(<<0:3,
 		    0:1,
 		    _:3,
 		    0:1,
-%% mountains of GTP header crap that we'll ignore in here TODO. I presume optional IEs as well. dammit.
+		    %%% not sure where to pad this to 20 bytes. TODO. Hope we don't need to do the optional IEs. 
 		    MSGType:8,
 		    MSGLen:16,
 		    SeqNum:16,
 		    Rest/binary>>) ->
-    {#gtpp_header{version=0, pt=0, short_header_for_gtp0_ind=0, 
+    {#gtpp_header{version=0, pt=0, modern_header=0, 
 		 msg_type=decode_msg_type(MSGType), msg_len=MSGLen, seqnum = SeqNum},
      Rest};
 
 decode_GTPP_header(<<Version:3,
 		    0:1,
 		    _:3,
-		    SH:1,
+		    _SH:1,
 		    MSGType:8,
 		    MSGLen:16,
 		    SeqNum:16,
 		    Rest/binary>>) ->
-    {#gtpp_header{version=Version, pt=0, short_header_for_gtp0_ind=SH, 
+    {#gtpp_header{version=Version, pt=0, modern_header=1, 
 		 msg_type=decode_msg_type(MSGType), msg_len=MSGLen, seqnum = SeqNum},
      Rest}.
 
@@ -57,16 +73,17 @@ decode_message(Bin) ->
 	unknown ->
 	    % respond with something saying WTF
 	    {error, unknown_msg_type};
-	echo_request ->
-	    {ok, {Header, not_yet_implemented}};
+	echo_request -> 
+	    {ok, {Header, {none, Rest}}};
 	echo_response ->
-	    {ok, {Header, not_yet_implemented}};
+	    {ok, {Header, {decode_ie(Rest, Header#gtpp_header.msg_len), Rest}}};
 	version_not_supported ->
-	    {ok, {Header, not_yet_implemented}};
+	    {ok, {Header, {none, Rest}}};
 	node_alive_request ->
-	    {ok, {Header, not_yet_implemented}};
+	    {Address, Rest} = decode_ie(Rest,  Header#gtpp_header.msg_len), %% TODO, cope with alternate node address
+	    {ok, {Header, {Address, Rest}}};
 	node_alive_response ->
-	    {ok, {Header, not_yet_implemented}};
+	    {ok, {Header, {none, Rest}}};
 	redirection_request ->
 	    {ok, {Header, not_yet_implemented}};
 	redirection_response ->
@@ -75,7 +92,8 @@ decode_message(Bin) ->
 	    MSG = decode_ie(Rest, Header#gtpp_header.msg_len),
 	    {ok, {Header, MSG}};
 	data_record_transfer_response ->
-	    {ok, {Header, not_yet_implemented}};
+	    MSG = decode_ie(Rest, Header#gtpp_header.msg_len),
+	    {ok, {Header, MSG}};
 	invalid_msg_type ->
 	    %% as per unknown
 	    {error, invalid_msg_type}
@@ -110,6 +128,10 @@ decode_ie(<<1:8, Value:8, Rest/binary>>, _Len) ->
 	3 -> {{cause, reject, Value}, Rest}
     end;
 
+%% restart counter
+decode_ie(<<14:8, Count:8, Rest/binary>>, _Len) ->
+    {{count, Count}, Rest};
+
 %% Data Record Packet
 decode_ie(<<126:8, 1:8, Rest/binary>>, Len) ->
     {DRPs, Rest2} = decode_ie_data_record_packet(Rest, Len),
@@ -118,10 +140,10 @@ decode_ie(<<126:8, 2:8, Rest/binary>>, Len) ->
     {DRPs, Rest2} = decode_ie_data_record_packet(Rest, Len-2),
     {{send_potential_duplicate_record_packet, DRPs}, Rest2};
 decode_ie(<<126:8, 3:8, Rest/binary>>, _Len) ->
-    {Seq_nums, Rest2} = decode_ie_sequence_numbers(Rest),
+    {Seq_nums, Rest2} = decode_ie(Rest,0),
     {{cancel_packets, Seq_nums}, Rest2};
 decode_ie(<<126:8, 4:8, Rest/binary>>, _Len) ->
-    {Seq_nums, Rest2} = decode_ie_sequence_numbers(Rest),
+    {Seq_nums, Rest2} = decode_ie(Rest,0),
     {{release_packets, Seq_nums}, Rest2};
 
 %% Charging Gateway Address (or Alternate) 
@@ -143,7 +165,14 @@ decode_ie(<<Other:8, Rest/binary>>, Len) when Other > 127 ->
 decode_ie(<<_Other:8, Length:16, Rest/binary>>, _Len) ->
     Bits =8*Length,
     <<Content:Bits, Rest2>> = Rest,
-    {{private_extension, Length, Content}, Rest2}.
+    {{private_extension, Length, Content}, Rest2};
+
+decode_ie(<<249:8, Len:16, SeqNum:16, Rest/binary>>, _Len) ->
+    decode_ie_sequence_numbers(Rest, Len, [SeqNum]);
+decode_ie(<<250:8, Len:16, SeqNum:16, Rest/binary>>, _Len) ->
+    decode_ie_sequence_numbers(Rest, Len, [SeqNum]);
+decode_ie(<<253:8, Len:16, SeqNum:16, Rest/binary>>, _Len) ->
+    decode_ie_sequence_numbers(Rest, Len, [SeqNum]).
 
 decode_ie_data_record_packet(<<252:8, 
 			      Len:16, 
@@ -154,12 +183,7 @@ decode_ie_data_record_packet(<<252:8,
     _Decoded_rec_format = decode_ie_data_record_format_version(Rec_format), %% Not going to do anything special with it right now.
     decode_cdrs(Len, Num_records, Rest).
 
-decode_ie_sequence_numbers(<<249:8, Len:16, SeqNum:16, Rest/binary>>) ->
-    decode_ie_sequence_numbers(Rest, Len, [SeqNum]);
-decode_ie_sequence_numbers(<<250:8, Len:16, SeqNum:16, Rest/binary>>) ->
-    decode_ie_sequence_numbers(Rest, Len-2, [SeqNum]);
-decode_ie_sequence_numbers(<<253:8, Len:16, SeqNum:16, Rest/binary>>) ->
-    decode_ie_sequence_numbers(Rest, Len-2, [SeqNum]).
+
 
 decode_ie_sequence_numbers(<< >>, _Len, List) ->
     {{sequence_numbers, List}, << >>};
@@ -171,9 +195,6 @@ decode_ie_sequence_numbers(<<SeqNum:16, Rest/binary>>, Len, List) ->
 
 decode_ie_data_record_format_version(<<App_ID:4, Release_ID:4, Version:8>>) ->
     {App_ID, Release_ID, Version}.
-
-decode_ie_data_record_transfer_response() ->
-     ok.
 
 
 decode_cdrs(Total_len, Num_records, Bin) ->

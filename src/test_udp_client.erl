@@ -10,7 +10,8 @@
 -export([start_sender/1]).
 
 start_sender(Count) ->
-    {ok, Socket} = gen_udp:open(3385, [binary]),
+    {ok, Socket} = gen_udp:open(3385, [binary]),    
+    gen_udp:send(Socket, {127,0,0,1}, 3386, gtpp_encode:echo_request(2,0,<< >> )),
     start2(Socket, Count).
     
 
@@ -43,3 +44,6 @@ start2(Socket, Count) ->
 
     ok = gen_udp:send(Socket, {127,0,0,1}, 3386, Packet),
     start2(Socket, Count-1).
+
+
+

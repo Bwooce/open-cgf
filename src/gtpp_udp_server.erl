@@ -1,9 +1,25 @@
 %%%-------------------------------------------------------------------
 %%% File    : gtp_udp_client.erl
-%%% Author  : root <root@one.w8trk.com>
+%%% Author  : Bruce Fitzsimons <bruce@fitzsimons.org>
 %%% Description : 
 %%%
-%%% Created : 18 Jan 2008 by root <root@one.w8trk.com>
+%%% Created : 18 Jan 2008 by Bruce Fitzsimons <bruce@fitzsimons.org>
+%%%
+%%% Copyright 2008 Bruce Fitzsimons
+%%%
+%%% This file is part of open-cgf.
+%%%
+%%% open-cgf is free software: you can redistribute it and/or modify
+%%% it under the terms of the GNU General Public License version 2 as
+%%% published by the Free Software Foundation.
+%%%
+%%% open-cgf is distributed in the hope that it will be useful,
+%%% but WITHOUT ANY WARRANTY; without even the implied warranty of
+%%% MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+%%% GNU General Public License for more details.
+%%%
+%%% You should have received a copy of the GNU General Public License
+%%% along with open-cgf.  If not, see <http://www.gnu.org/licenses/>.
 %%%-------------------------------------------------------------------
 -module(gtpp_udp_server).
 
@@ -104,6 +120,7 @@ handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
 		redirection_response ->
 		    {noreply, State};
 		echo_request ->
+		    send_echo_response(InSocket, {InIP, InPort}, Header),
 		    {noreply, State};
 		echo_response ->
 		    {noreply, State}
@@ -138,3 +155,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 send_data_record_transfer_response(InSocket, {InIP, Port}, Header) ->
     ok.
+
+send_echo_response(InSocket, {InIP, Port}, Header) ->
+    R = gtpp_encode:echo_response(2, 0, 0, << >>), %% TODO, counter and restart_counter properly, counter per IP:Port I think.
+    ok = gen_udp:send(InSocket, InIP, Port, R).

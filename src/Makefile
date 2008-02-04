@@ -30,7 +30,7 @@ else
 DEBUG_FLAGS =
 endif
 
-MODULES=test_udp_client open-cgf open-cgf_app open-cgf_sup cdr_file_srv gtpp_decode gtpp_udp_server 
+MODULES=test_udp_client open-cgf open-cgf_app open-cgf_sup cdr_file_srv gtpp_decode gtpp_encode gtpp_udp_server 
 # gtpp_tcp_server gtpp_tcp_connection 
 
 
