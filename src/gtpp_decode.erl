@@ -85,9 +85,9 @@ decode_message(Bin) ->
 	node_alive_response ->
 	    {ok, {Header, {none, Rest}}};
 	redirection_request ->
-	    {ok, {Header, not_yet_implemented}};
+	    {ok, {Header, {decode_ie(Rest, Header#gtpp_header.msg_len), Rest}}}; %% TODO, cope with addresses not just cause
 	redirection_response ->
-	    {ok, {Header, not_yet_implemented}};
+	    {ok, {Header, {decode_ie(Rest, Header#gtpp_header.msg_len), Rest}}};
 	data_record_transfer_request ->
 	    MSG = decode_ie(Rest, Header#gtpp_header.msg_len),
 	    {ok, {Header, MSG}};

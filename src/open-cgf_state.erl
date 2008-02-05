@@ -1,11 +1,9 @@
 %%%-------------------------------------------------------------------
-%%% File    : gtp_udp_client.erl
+%%% File    : open-cgf_state.erl
 %%% Author  : Bruce Fitzsimons <bruce@fitzsimons.org>
 %%% Description : 
 %%%
-%%% Created : 18 Jan 2008 by Bruce Fitzsimons <bruce@fitzsimons.org>
-%%%
-%%% Copyright 2008 Bruce Fitzsimons
+%%% Copyright 2008 Bruce Fitzsimons 
 %%%
 %%% This file is part of open-cgf.
 %%%
@@ -21,7 +19,7 @@
 %%% You should have received a copy of the GNU General Public License
 %%% along with open-cgf.  If not, see <http://www.gnu.org/licenses/>.
 %%%-------------------------------------------------------------------
--module(gtpp_udp_server).
+-module('open-cgf_state').
 
 -behaviour(gen_server).
 
@@ -30,13 +28,13 @@
 -include("gtp.hrl").
 
 %% API
--export([start_link/0]).
+-export([start_link/0, get_next_seqnum/1, get_restart_counter/0, inc_restart_counter/0]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
 
--record(state, {socket}).
+-record(state, {sequence_numbers, restart_counter }).
 
 %%====================================================================
 %% API
@@ -48,9 +46,20 @@
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
+
+get_next_seqnum(Key) ->
+    gen_server:call(?SERVER, {seqnum, Key}).
+
+get_restart_counter() ->
+    gen_server:call(?SERVER, {restart_counter}).
+
+inc_restart_counter() ->
+        gen_server:call(?SERVER, {inc_restart_counter}).
+
 %%====================================================================
 %% gen_server callbacks
 %%====================================================================
+
 
 %%--------------------------------------------------------------------
 %% Function: init(Args) -> {ok, State} |
@@ -60,9 +69,15 @@ start_link() ->
 %% Description: Initiates the server
 %%--------------------------------------------------------------------
 init([]) ->
-    'open-cgf_state':inc_restart_counter(), %% both TCP and UDP servers do this so if either restarts it is noticable
-    {ok, Socket} = gen_udp:open(3386, [binary]),
-    {ok, #state{socket=Socket}}.
+    %% read state from dets
+    {ok, _} = dets:open_file(cgf_state_dets, [{ram_file, true}]), %% we're storing nothing that isn't sync'd (for the moment)
+    {_, RC} = case dets:lookup(cgf_state_dets, restart_counter) of
+		  [C] -> C;
+		  [] -> 
+		      ok = dets:insert(cgf_state_dets, {restart_counter, 0}),
+		      {nothing, 0}
+	      end,
+    {ok, #state{restart_counter=RC, sequence_numbers=orddict:new()}}.
 
 %%--------------------------------------------------------------------
 %% Function: %% handle_call(Request, From, State) -> {reply, Reply, State} |
@@ -73,6 +88,21 @@ init([]) ->
 %%                                      {stop, Reason, State}
 %% Description: Handling call messages
 %%--------------------------------------------------------------------
+handle_call({seqnum, Key}, _, State) ->
+    NewDict = orddict:update_counter(Key, 1, State#state.sequence_numbers),
+    SeqNum = orddict:fetch(Key, NewDict),
+    ?PRINTDEBUG2("Next seqnum for key ~p is ~p",[Key, SeqNum]),
+    {reply, SeqNum rem 65536, State#state{sequence_numbers=NewDict}};
+
+handle_call({restart_counter}, _, State) ->
+    ?PRINTDEBUG2("Restart counter is ~p",[State#state.restart_counter]),
+    {reply, State#state.restart_counter, State};
+
+handle_call({inc_restart_counter}, _, State) ->
+    RC = dets:update_counter(cgf_state_dets, restart_counter, 1) rem 256,
+    dets:sync(cgf_state_dets),
+    {reply, RC, State#state{restart_counter=RC}};
+
 handle_call(_Request, _From, State) ->
     Reply = ok,
     {reply, Reply, State}.
@@ -83,6 +113,8 @@ handle_call(_Request, _From, State) ->
 %%                                      {stop, Reason, State}
 %% Description: Handling cast messages
 %%--------------------------------------------------------------------
+
+    
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
@@ -92,46 +124,6 @@ handle_cast(_Msg, State) ->
 %%                                       {stop, Reason, State}
 %% Description: Handling all non call/cast messages
 %%--------------------------------------------------------------------
-handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
-    ?PRINTDEBUG2("Got Message ~p from ~p:~p", [Packet, InIP, InPort]),
-    %% decode the header, {InIP, Port, SeqNum} forms a unique tuple. I think. How ugly.
-    case gtpp_decode:decode_message(Packet) of
-	{ok, {Header, Message}} ->
-	    case Header#gtpp_header.msg_type of
-		data_record_transfer_request ->
-		    {{Type, Content}, _} = Message,
-		    case Type of 
-			send_data_record_packet ->
-			    %% log Content as DRPs [] - cdr_log_srv:log(Message)
-			    %% TODO in the future cdr_file_srv will instigate response when file closed. More efficient to batch them up.
-			    ok;
-			send_potential_duplicate_record_packet ->
-			    ok;
-			cancel_packets ->
-			    ok;
-			release_packets ->
-			    ok
-		    end,
-		    send_data_record_transfer_response(InSocket, {InIP, InPort}, Header),
-		    {noreply, State};
-		node_alive_request ->
-		    send_node_alive_response(InSocket, {InIP, InPort}, Header, Message),
-		    {noreply, State};
-		node_alive_response ->
-		    {noreply, State};
-		redirection_response ->
-		    {noreply, State};
-		echo_request ->
-		    send_echo_response(InSocket, {InIP, InPort}, Header),
-		    {noreply, State};
-		echo_response ->
-		    {noreply, State}
-	    end;
-	{error, Reason} ->
-	    %% Send back error of some kind
-	    {noreply, State}
-    end;
-
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -143,6 +135,7 @@ handle_info(_Info, State) ->
 %% The return value is ignored.
 %%--------------------------------------------------------------------
 terminate(_Reason, _State) ->
+    dets:sync(cgf_state_dets),
     ok.
 
 %%--------------------------------------------------------------------
@@ -155,17 +148,3 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 %%% Internal functions
 %%--------------------------------------------------------------------
-send_data_record_transfer_response(InSocket, {InIP, Port}, Header) ->
-    ok.
-
-send_echo_response(InSocket, {InIP, InPort}, Header) ->
-    SeqNum = 'open-cgf_state':get_next_seqnum({InIP, InPort}),
-    RC = 'open-cgf_state':get_restart_counter(),
-    R = gtpp_encode:echo_response(2, SeqNum, RC, << >>), 
-    ok = gen_udp:send(InSocket, InIP, InPort, R).
-
-send_node_alive_response(InSocket, {InIP, InPort}, Header, Message) ->
-    SeqNum = 'open-cgf_state':get_next_seqnum({InIP, InPort}),
-    R = gtpp_encode:node_alive_response(2, SeqNum, << >>), 
-    ok = gen_udp:send(InSocket, InIP, InPort, R).
-    

@@ -59,6 +59,8 @@ init([]) ->
     {ok, StartTCP} = application:get_env('open-cgf', tcp_server), %%% only start the TCP server if required
     CDRFileServer = {'CDRServer',{cdr_file_srv,start_link,[]},
 		     permanent,2000,worker,[cdr_file_srv]},
+    CGFState = {'CGFState',{'open-cgf_state',start_link,[]},
+		permanent,2000,worker,['open-cgf_state']},
     UDPServer = {'UDPServer',{gtpp_udp_server,start_link,[]},
 		 permanent,2000,worker,[gtpp_udp_server]},
     TCPServer = case StartTCP of
@@ -67,7 +69,7 @@ init([]) ->
 			 permanent,2000,worker,[gtpp_tcp_server]}];
 		    _ -> []
 		end,
-    {ok,{{one_for_all,0,1}, [CDRFileServer, UDPServer] ++ TCPServer}}.
+    {ok,{{one_for_all,0,1}, [CDRFileServer, CGFState, UDPServer] ++ TCPServer}}.
 
 %%====================================================================
 %% Internal functions
