@@ -32,7 +32,8 @@
 
 %% API
 -export([start_link/0, log/3]).
--export([log_cdr/2,log_duplicate_cdr/2,flush_pending/2]).
+-export([log_cdr/2,log_duplicate_cdr/2,flush_pending/2,flush_pending_duplicates/2]).
+-export([flush_pending_timer/1, flush_duplicates_timer/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -101,6 +102,10 @@ init([]) ->
     {ok, CDR_file_age_limit} = application:get_env('open-cgf', cdr_file_age_limit_seconds),
     {ok, CDR_duplicate_limit} = application:get_env('open-cgf', cdr_possible_duplicate_limit_seconds), 
     %% set the callback timer to close files after time limit is up
+    I1 = trunc((CDR_file_age_limit*1000)/2),
+    {ok, _} = timer:send_interval(I1, {flush_pending_tick}),
+    I2 = trunc((CDR_duplicate_limit*1000)/2),
+    {ok, _} = timer:send_interval(I2, {flush_duplicates_tick}),
     process_flag(trap_exit, true),
     {ok, #state{known_sources=[], cdr_dir=CDR_dir, cdr_temp_dir=CDR_temp_dir,
 	        file_record_limit=CDR_file_record_limit, file_age_limit_seconds=CDR_file_age_limit,
@@ -136,15 +141,30 @@ handle_cast({log, Source, Seq_num, Data}, State) ->
     {noreply, NewState};
 
 handle_cast({flush_pending, SourceKey, SeqNums}, State) ->
+    S = get_source(SourceKey, State),
     %%send ack via gtpp_udp_server
     notify_cdf(SourceKey, SeqNums),
     %% remove seq
-    S = get_source(SourceKey, State),
     RB=update_ringbuffer(S#source.old_seq_nums_ringbuffer, SeqNums, ?MAXRINGBUF),
     NewS = S#source{old_seq_nums_ringbuffer=RB, 
 		    cdr_writer_pid=none,
 		    pending_write_list=delete_seqnums(S#source.pending_write_list, SeqNums)},
     {noreply, State#state{known_sources=lists:keystore(SourceKey, 2, State#state.known_sources, NewS) }};
+
+handle_cast({flush_pending_from_timer, SourceKey, SeqNums}, State) ->
+    S = get_source(SourceKey, State),
+    case S#source.cdr_writer_pid of
+	none ->  
+	    %%send ack via gtpp_udp_server
+	    notify_cdf(SourceKey, SeqNums),
+	    %% remove seq
+	    RB=update_ringbuffer(S#source.old_seq_nums_ringbuffer, SeqNums, ?MAXRINGBUF),
+	    NewS = S#source{old_seq_nums_ringbuffer=RB, 
+			    pending_write_list=delete_seqnums(S#source.pending_write_list, SeqNums)},
+	    {noreply, State#state{known_sources=lists:keystore(SourceKey, 2, State#state.known_sources, NewS) }};
+	_ ->
+	    {noreply, State}
+    end;
 
 handle_cast({flush_pending_duplicates, SourceKey, SeqNums}, State) ->
     %% no need to ack as these are already ack'd
@@ -155,6 +175,18 @@ handle_cast({flush_pending_duplicates, SourceKey, SeqNums}, State) ->
 		    possible_duplicate_list=delete_seqnums(S#source.pending_write_list, SeqNums)},
     {noreply, State#state{known_sources=lists:keystore(SourceKey, 2, State#state.known_sources, NewS) }};
 
+handle_cast({flush_pending_duplicates_from_timer, SourceKey, SeqNums}, State) ->
+    %% no need to ack as these are already ack'd
+    S = get_source(SourceKey, State),
+    case S#source.cdr_writer_pid of
+	none ->
+	    RB=update_ringbuffer(S#source.old_seq_nums_ringbuffer, SeqNums, ?MAXRINGBUF),
+	    NewS = S#source{old_seq_nums_ringbuffer=RB, 
+			    possible_duplicate_list=delete_seqnums(S#source.pending_write_list, SeqNums)},
+	    {noreply, State#state{known_sources=lists:keystore(SourceKey, 2, State#state.known_sources, NewS) }};
+	_ ->
+	    {noreply, State} %% we can't stomp on an existing writer sessions
+    end;
 
 handle_cast(_Msg, State) ->
     {noreply, State}.
@@ -165,6 +197,14 @@ handle_cast(_Msg, State) ->
 %%                                       {stop, Reason, State}
 %% Description: Handling all non call/cast messages
 %%--------------------------------------------------------------------
+handle_info({flush_pending_tick}, State) ->
+    spawn(?MODULE, flush_pending_timer, [State]),
+    {noreply, State};
+
+handle_info({flush_duplicates_tick}, State) ->
+    spawn(?MODULE, flush_duplicates_timer, [State]),
+    {noreply, State};
+
 handle_info(Info, State) ->
     error_logger:warn_msg("Got unhandled info ~p while in state ~p",[Info, State]),
     {noreply, State}.
@@ -173,12 +213,14 @@ handle_info(Info, State) ->
 %% Function: terminate(Reason, State) -> void()
 %% Description: This function is called by a gen_server when it is about to
 %% terminate. It should be the opposite of Module:init/1 and do any necessary
-
-
 %% cleaning up. When it returns, the gen_server terminates with Reason.
 %% The return value is ignored.
 %%--------------------------------------------------------------------
-terminate(_Reason, _State) ->
+terminate(_Reason, State) ->
+    lists:foreach(fun(S) ->
+			  log_cdr(S, State),
+			  log_duplicate_cdr(S, State)
+		  end, State#state.known_sources),
     ok.
 
 %%--------------------------------------------------------------------
@@ -335,3 +377,38 @@ notify_cdf({udp, Address, Port}, Seq_nums) ->
     gtpp_udp_server:confirm({Address, Port}, Seq_nums);
 notify_cdf({tcp, Address, Port}, Seq_nums) ->
     gtpp_tcp_server:confirm({Address, Port}, Seq_nums).
+
+%% flushes all records when the first in the queue expires. 
+flush_pending_timer(State) ->
+    ?PRINTDEBUG("flush_pending_timer running"),
+    lists:foreach(fun(S) ->
+			  TSnow = greg_now(),
+			  case S#source.pending_write_list of
+			      [] ->
+				  ok;
+			      [{_,TS,_}|_] -> %% check the first record, if expired then flush all
+				  if(TS+State#state.file_age_limit_seconds > TSnow) ->
+					  SeqNums = lists:foldl(fun({SeqNum, _, _}, Acc) ->
+									Acc ++ [SeqNum]
+								end, [], S#source.pending_write_list),
+					  gen_server:cast(?SERVER, {flush_pending_from_timer,
+								    S#source.address, SeqNums});
+				  true ->
+					  ok
+				  end
+			  end
+		  end, State#state.known_sources).
+
+%% flushes only those records that have timed out, allowing the CDF is decide to remove some of the non-expired ones at it's pleasure
+flush_duplicates_timer(State) ->
+    lists:foreach(fun(S) ->
+			  TSnow = greg_now(),
+			  SeqNums = lists:foldl(fun({SeqNum, TS, _}, Acc) ->
+							if(TS+State#state.possible_duplicate_limit_seconds > TSnow) ->
+								Acc ++ [SeqNum];
+							  true -> Acc
+							end
+						end, [], S#source.possible_duplicate_list),
+			  gen_server:cast(?SERVER, {flush_pending_duplicates_from_timer, S#source.address, SeqNums})
+		  end, State#state.known_sources).
+    
