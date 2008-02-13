@@ -30,13 +30,13 @@
 -include("gtp.hrl").
 
 %% API
--export([start_link/0]).
+-export([start_link/0, confirm/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
 
--record(state, {socket}).
+-record(state, {socket, ip, port, version}).
 
 %%====================================================================
 %% API
@@ -47,6 +47,9 @@
 %%--------------------------------------------------------------------
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+
+confirm(Address, SeqNums) ->
+    gen_server:call(?SERVER, {confirm, Address, SeqNums}).
 
 %%====================================================================
 %% gen_server callbacks
@@ -61,8 +64,17 @@ start_link() ->
 %%--------------------------------------------------------------------
 init([]) ->
     'open-cgf_state':inc_restart_counter(), %% both TCP and UDP servers do this so if either restarts it is noticable
-    {ok, Socket} = gen_udp:open(3386, [binary]),
-    {ok, #state{socket=Socket}}.
+    {ok, {IP,Port}} = application:get_env('open-cgf', listen),
+    {ok, Socket} = gen_udp:open(Port, [binary,{ip, IP},{recbuf, 300000}]),
+    error_logger:info_msg("open-cgf listening on ~p:~p UDP~n",[IP, Port]),
+    {ok, CDFs} = application:get_env('open-cgf', cdf_list),
+    {ok, Version} = application:get_env('open-cgf', gtpp_version),
+    lists:foreach(fun({DestIP, DestPort}) ->
+			  error_logger:info_msg("open-cgf sending echo request and node_alive request to ~p:~p~n",[DestIP, DestPort]),
+			  send_echo_request(Socket, Version, {DestIP,DestPort}),
+			  send_node_alive_request(Socket, Version, {DestIP, DestPort}, IP)
+		  end, CDFs),			  
+    {ok, #state{socket=Socket, ip=IP, port=Port, version=Version}}.
 
 %%--------------------------------------------------------------------
 %% Function: %% handle_call(Request, From, State) -> {reply, Reply, State} |
@@ -73,6 +85,13 @@ init([]) ->
 %%                                      {stop, Reason, State}
 %% Description: Handling call messages
 %%--------------------------------------------------------------------
+handle_call({confirm, {IP, Port}, SeqNums}, _From, State) ->
+    SeqNum = hd(SeqNums),
+    send_data_record_transfer_response(State#state.socket, State#state.version, SeqNum, 
+				       {IP, Port}, 
+				       request_accepted, SeqNums),
+    {reply, ok, State};
+
 handle_call(_Request, _From, State) ->
     Reply = ok,
     {reply, Reply, State}.
@@ -98,31 +117,44 @@ handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
     case gtpp_decode:decode_message(Packet) of
 	{ok, {Header, Message}} ->
 	    case Header#gtpp_header.msg_type of
+	        version_not_supported ->
+                    {noreply, State#state{version=Header#gtpp_header.version}};
 		data_record_transfer_request ->
 		    {{Type, Content}, _} = Message,
 		    case Type of 
 			send_data_record_packet ->
-			    %% log Content as DRPs [] - cdr_log_srv:log(Message)
-			    %% TODO in the future cdr_file_srv will instigate response when file closed. More efficient to batch them up.
-			    ok;
+			    cdr_file_srv:log({udp, InIP, InPort}, Header#gtpp_header.seqnum, Message),
+			    {noreply, State};
 			send_potential_duplicate_record_packet ->
-			    ok;
+			    %% TODO - send this to cdr_file_srv
+			    send_data_record_transfer_response(InSocket, State#state.version, Header#gtpp_header.seqnum,
+							       {InIP, InPort}, 
+							       request_accepted, [Header#gtpp_header.seqnum]),
+			    {noreply, State};
 			cancel_packets ->
-			    ok;
+			    %% TODO - send this to cdr_file_srv
+			    send_data_record_transfer_response(InSocket, State#state.version, Header#gtpp_header.seqnum,
+							       {InIP, InPort}, 
+							       request_accepted, [Header#gtpp_header.seqnum]),
+			    {noreply, State};
 			release_packets ->
-			    ok
-		    end,
-		    send_data_record_transfer_response(InSocket, {InIP, InPort}, Header),
-		    {noreply, State};
+			    %% TODO - send this to cdr_file_srv
+			    send_data_record_transfer_response(InSocket, State#state.version, Header#gtpp_header.seqnum,
+							       {InIP, InPort}, 
+							       request_accepted, [Header#gtpp_header.seqnum]),
+			    {noreply, State}
+		    end;
 		node_alive_request ->
-		    send_node_alive_response(InSocket, {InIP, InPort}, Header, Message),
+		    send_node_alive_response(InSocket, State#state.version, Header#gtpp_header.seqnum,
+					     {InIP, InPort}),
 		    {noreply, State};
 		node_alive_response ->
 		    {noreply, State};
 		redirection_response ->
 		    {noreply, State};
 		echo_request ->
-		    send_echo_response(InSocket, {InIP, InPort}, Header),
+		    send_echo_response(InSocket, State#state.version, Header#gtpp_header.seqnum,
+				       {InIP, InPort}),
 		    {noreply, State};
 		echo_response ->
 		    {noreply, State}
@@ -132,7 +164,8 @@ handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
 	    {noreply, State}
     end;
 
-handle_info(_Info, State) ->
+handle_info(Info, State) ->
+    error_logger:warn_msg("Got unhandled info ~p while in state ~p",[Info, State]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -155,17 +188,26 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 %%% Internal functions
 %%--------------------------------------------------------------------
-send_data_record_transfer_response(InSocket, {InIP, Port}, Header) ->
-    ok.
+send_data_record_transfer_response(Socket, Version, SeqNum, {InIP, InPort}, Cause, SeqNums) ->
+    R = gtpp_encode:data_record_transfer_response(Version, SeqNum, Cause, SeqNums, << >>), 
+    ok = gen_udp:send(Socket, InIP, InPort, R).
 
-send_echo_response(InSocket, {InIP, InPort}, Header) ->
-    SeqNum = 'open-cgf_state':get_next_seqnum({InIP, InPort}),
+send_echo_response(Socket, Version, SeqNum, {InIP, InPort}) ->
     RC = 'open-cgf_state':get_restart_counter(),
-    R = gtpp_encode:echo_response(2, SeqNum, RC, << >>), 
-    ok = gen_udp:send(InSocket, InIP, InPort, R).
+    R = gtpp_encode:echo_response(Version, SeqNum, RC, << >>), 
+    ok = gen_udp:send(Socket, InIP, InPort, R).
 
-send_node_alive_response(InSocket, {InIP, InPort}, Header, Message) ->
-    SeqNum = 'open-cgf_state':get_next_seqnum({InIP, InPort}),
-    R = gtpp_encode:node_alive_response(2, SeqNum, << >>), 
-    ok = gen_udp:send(InSocket, InIP, InPort, R).
+send_echo_request(Socket, Version, {DestIP, DestPort}) ->
+    SeqNum = 'open-cgf_state':get_next_seqnum({DestIP, DestPort}),
+    R = gtpp_encode:echo_request(Version, SeqNum, << >>), 
+    ok = gen_udp:send(Socket, DestIP, DestPort, R).
+
+send_node_alive_request(Socket, Version, {DestIP, DestPort}, MyAddress) ->
+    SeqNum = 'open-cgf_state':get_next_seqnum({DestIP, DestPort}),
+    R = gtpp_encode:node_alive_request(Version, SeqNum, MyAddress, << >>), 
+    ok = gen_udp:send(Socket, DestIP, DestPort, R).
+
+send_node_alive_response(Socket, Version, SeqNum, {InIP, InPort}) ->
+    R = gtpp_encode:node_alive_response(Version, SeqNum, << >>), 
+    ok = gen_udp:send(Socket, InIP, InPort, R).
     

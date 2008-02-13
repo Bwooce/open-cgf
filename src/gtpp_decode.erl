@@ -44,10 +44,10 @@ decode_GTPP_header(<<0:3,
 		    0:1,
 		    _:3,
 		    0:1,
-		    %%% not sure where to pad this to 20 bytes. TODO. Hope we don't need to do the optional IEs. 
 		    MSGType:8,
 		    MSGLen:16,
 		    SeqNum:16,
+		    _:14/binary,
 		    Rest/binary>>) ->
     {#gtpp_header{version=0, pt=0, modern_header=0, 
 		 msg_type=decode_msg_type(MSGType), msg_len=MSGLen, seqnum = SeqNum},
@@ -80,8 +80,8 @@ decode_message(Bin) ->
 	version_not_supported ->
 	    {ok, {Header, {none, Rest}}};
 	node_alive_request ->
-	    {Address, Rest} = decode_ie(Rest,  Header#gtpp_header.msg_len), %% TODO, cope with alternate node address
-	    {ok, {Header, {Address, Rest}}};
+	    {Address, Rest2} = decode_ie(Rest,  Header#gtpp_header.msg_len), %% TODO, cope with alternate node address
+	    {ok, {Header, {Address, Rest2}}};
 	node_alive_response ->
 	    {ok, {Header, {none, Rest}}};
 	redirection_request ->

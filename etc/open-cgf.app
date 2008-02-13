@@ -6,11 +6,14 @@
   {registered, []},
   {applications, [kernel, stdlib, sasl]},
   {mod, {'open-cgf_app',[]}},
-  {env, [{cdr_dir, "/usr/local/log/"},          %% directory for cdr files to be written
-	 {cdr_temp_dir, "/usr/local/log_tmp/"}, %% directory for files to be written in before being closed
+  {env, [{cdr_dir, "/tmp/log/"},          %% directory for cdr files to be written
+	 {cdr_temp_dir, "/tmp/log_tmp/"}, %% directory for files to be written in before being closed
 	 {cdr_file_age_limit_seconds, 60},
-	 {cdr_file_record_limit, 1000},
+	 {cdr_file_record_limit, 1},
+	 {cdr_possible_duplicate_limit_seconds, 600},
 	 {tcp_server, false},                    %% start a TCP (for GTP' v0 only) server?
-	 {cdf_list, [{{ipv4, {127,0,0,1}, 9000}}]}      %% list of CDFs to notify when CGF is initialised TODO
+	 {cdf_list, [{{65,23,156,214}, 3386}]},      %% list of CDFs to notify when CGF is initialised
+	 {listen, {{65,23,156,215},3386}},           %% which interface/port to listen on
+	 {gtpp_version, 2}			%% GTP' version to use (0-2)
 	]}
  ]}.

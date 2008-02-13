@@ -38,7 +38,7 @@ header(Header) ->
 		0 ->
 		    old_header(Header);
 		_ ->
-		    modern_header(Header)
+		    modern_header_v0(Header)
 	    end;
 	1 ->
 	    modern_header(Header);
@@ -54,13 +54,38 @@ modern_header(Header) ->
     <<Version:3, 
       0:1, %% GTP'
       7:3, %% defined as unused, all 1's
-      0:1, %% modern header if GTPv0
+      0:1, %% unset and ignored if > GTPv0
       MsgType:8,
       MsgLen:16,
       SeqNum:16>>.
 
-old_header(_Header) ->
-    not_yet_implemented. %% TODO
+modern_header_v0(Header) ->
+    Version = Header#gtpp_header.version,
+    MsgType = Header#gtpp_header.msg_type,
+    MsgLen = Header#gtpp_header.msg_len,
+    SeqNum = Header#gtpp_header.seqnum,
+    <<Version:3,
+      0:1, %% GTP'
+      7:3, %% defined as unused, all 1's
+      1:1, %% modern header if GTPv0
+      MsgType:8,
+      MsgLen:16,
+      SeqNum:16>>.
+
+
+old_header(Header) ->
+    Version = Header#gtpp_header.version,
+    MsgType = Header#gtpp_header.msg_type,
+    MsgLen = Header#gtpp_header.msg_len,
+    SeqNum = Header#gtpp_header.seqnum,
+    <<Version:3,
+      0:1, %% GTP'
+      7:3, %% defined as unused, all 1's
+      0:1, %% old header if GTPv0
+      MsgType:8,
+      MsgLen:16,
+      SeqNum:16,
+      0:128>>.
 
 echo_request(Version, SeqNum, Extensions) ->
     ?PRINTDEBUG("echo_request"),
@@ -165,7 +190,7 @@ data_record_transfer_request(Version, SeqNum, release_packets, SeqNums, Extensio
     <<H/binary, B/binary>>.
 
 data_record_transfer_response(Version, SeqNum, Cause, RequestsResponded, Extensions) ->
-    ?PRINTDEBUG("data_record_transfer_response/5"),
+    ?PRINTDEBUG2("data_record_transfer_response/5 ~p ~p",[SeqNum, RequestsResponded]),
     C = cause(Cause),
     R = requests_responded(RequestsResponded),
     B = <<C:8, R/binary, Extensions/binary>>,
