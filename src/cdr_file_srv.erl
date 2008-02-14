@@ -218,14 +218,14 @@ handle_info({'EXIT', _, normal}, State) ->
 
 %% fixup so we don't stall in a state with a dead cdr_writer
 handle_info({'EXIT', Pid, Cause}, State) ->
-    NewKS = lists:flatmap(fun(S) ->
-				  case S#source.cdr_writer_pid of
-				      Pid ->
-					  error_logger:error_msg("CDR Writer for ~p exited with ~p",[S#source.address, Cause]),
-					  S#source{cdr_writer_pid=none};				      
-				      _ -> S
-				  end
-			  end, State#state.known_sources),
+    NewKS = lists:map(fun(S) ->
+			      case S#source.cdr_writer_pid of
+				  Pid ->
+				      error_logger:error_msg("CDR Writer for ~p exited with ~p",[S#source.address, Cause]),
+				      S#source{cdr_writer_pid=none};				      
+				  _ -> S
+			      end
+		      end, State#state.known_sources),
     {noreply, State#state{known_sources=NewKS}};
 
 handle_info(Info, State) ->
