@@ -49,6 +49,7 @@ start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
 confirm(Address, SeqNums) ->
+    error_logger:info_msg("Written sequence numbers ~p",[SeqNums]),
     gen_server:call(?SERVER, {confirm, Address, SeqNums}).
 
 %%====================================================================

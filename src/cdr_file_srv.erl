@@ -140,6 +140,8 @@ handle_cast({log, Source, Seq_num, Data}, State) ->
     {ok, NewState} = buffer_cdr(Source, Seq_num, Data, State),
     {noreply, NewState};
 
+handle_cast({flush_pending, _, []}, State) ->
+    {noreply, State};
 handle_cast({flush_pending, SourceKey, SeqNums}, State) ->
     S = get_source(SourceKey, State),
     %%send ack via gtpp_udp_server
@@ -151,6 +153,8 @@ handle_cast({flush_pending, SourceKey, SeqNums}, State) ->
 		    pending_write_list=delete_seqnums(S#source.pending_write_list, SeqNums)},
     {noreply, State#state{known_sources=lists:keystore(SourceKey, 2, State#state.known_sources, NewS) }};
 
+handle_cast({flush_pending_from_timer, _, []}, State) ->
+    {noreply, State};
 handle_cast({flush_pending_from_timer, SourceKey, SeqNums}, State) ->
     S = get_source(SourceKey, State),
     case S#source.cdr_writer_pid of
@@ -166,6 +170,8 @@ handle_cast({flush_pending_from_timer, SourceKey, SeqNums}, State) ->
 	    {noreply, State}
     end;
 
+handle_cast({flush_pending_duplicates, _, []}, State) ->
+    {noreply, State};
 handle_cast({flush_pending_duplicates, SourceKey, SeqNums}, State) ->
     %% no need to ack as these are already ack'd
     S = get_source(SourceKey, State),
@@ -175,6 +181,8 @@ handle_cast({flush_pending_duplicates, SourceKey, SeqNums}, State) ->
 		    possible_duplicate_list=delete_seqnums(S#source.pending_write_list, SeqNums)},
     {noreply, State#state{known_sources=lists:keystore(SourceKey, 2, State#state.known_sources, NewS) }};
 
+handle_cast({flush_pending_duplicates_from_timer, _, []}, State) ->
+    {noreply, State};
 handle_cast({flush_pending_duplicates_from_timer, SourceKey, SeqNums}, State) ->
     %% no need to ack as these are already ack'd
     S = get_source(SourceKey, State),
@@ -198,15 +206,30 @@ handle_cast(_Msg, State) ->
 %% Description: Handling all non call/cast messages
 %%--------------------------------------------------------------------
 handle_info({flush_pending_tick}, State) ->
-    spawn(?MODULE, flush_pending_timer, [State]),
+    spawn_link(?MODULE, flush_pending_timer, [State]),
     {noreply, State};
 
 handle_info({flush_duplicates_tick}, State) ->
-    spawn(?MODULE, flush_duplicates_timer, [State]),
+    spawn_link(?MODULE, flush_duplicates_timer, [State]),
     {noreply, State};
 
+handle_info({'EXIT', _, normal}, State) ->
+    {noreply, State};
+
+%% fixup so we don't stall in a state with a dead cdr_writer
+handle_info({'EXIT', Pid, Cause}, State) ->
+    NewKS = lists:flatmap(fun(S) ->
+				  case S#source.cdr_writer_pid of
+				      Pid ->
+					  error_logger:error_msg("CDR Writer for ~p exited with ~p",[S#source.address, Cause]),
+					  S#source{cdr_writer_pid=none};				      
+				      _ -> S
+				  end
+			  end, State#state.known_sources),
+    {noreply, State#state{known_sources=NewKS}};
+
 handle_info(Info, State) ->
-    error_logger:warn_msg("Got unhandled info ~p while in state ~p",[Info, State]),
+    error_logger:warning_msg("Got unhandled info ~p while in state ~p",[Info, State]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -263,7 +286,7 @@ check_pending_buffer(TS, S, State) when S#source.cdr_writer_pid == none, S#sourc
     TScomp = oldest_TS(S#source.pending_write_list)+State#state.file_age_limit_seconds,
     if (TScomp < TS) or (S#source.pending_records >= State#state.file_record_limit) ->
 	    ?PRINTDEBUG("Spawning pending_buffer cdr writer"),
-	    Pid = spawn(?MODULE, log_cdr, [S, State]),  %% will write
+	    Pid = spawn_link(?MODULE, log_cdr, [S, State]),  %% will write
 	    NewS = S#source{cdr_writer_pid = Pid},
 	    NewKS = lists:keystore(S#source.address, 2, State#state.known_sources, NewS),
 	    State#state{known_sources=NewKS};
@@ -279,7 +302,7 @@ check_duplicate_buffer(TS, S, State) when S#source.cdr_writer_pid == none ->
     ?PRINTDEBUG2("check_duplicate_buffer ~p", [TS]),
     TScomp = oldest_TS(S#source.possible_duplicate_list)+State#state.file_age_limit_seconds,
     if (TScomp < TS) or length(S#source.possible_duplicate_list) > State#state.file_record_limit ->
-	    Pid = spawn(?MODULE, log_duplicate_cdr, [S, State]),  %% will write
+	    Pid = spawn_link(?MODULE, log_duplicate_cdr, [S, State]),  %% will write
 	    NewS = S#source{cdr_writer_pid = Pid},
 	    State#state{known_sources=lists:keystore(S#source.address, 2, State#state.known_sources, NewS)};
        true ->
@@ -304,39 +327,40 @@ get_source(SourceKey, State) ->
 
 log_cdr(S, State) ->
     ?PRINTDEBUG2("Logging CDRs PID ~p",[self()]),
-    {{YY,MMM,DD},{HH,MM,SS}} = calendar:now_to_universal_time(now()),
-    DT = io_lib:format("~4.10.0B~2.10.0B~2.10.0BT~2.10.0B~2.10.0B~2.10.0B",[YY, MMM, DD, HH, MM, SS]),
-    {ok,HN} = inet:gethostname(),
-    Temp_filename = filename:join([State#state.cdr_temp_dir, "CDR-" ++ HN ++ "-" ++ DT]), 
-    ?PRINTDEBUG2("Temp filename is ~p",[Temp_filename]),
-    ok = filelib:ensure_dir(Temp_filename),
-    Final_filename =  filename:join([State#state.cdr_dir, "CDR-" ++ HN ++ "-" ++ DT]), 
-    ok = filelib:ensure_dir(Final_filename),
-    %% log data to file
-    {ok, F} = file:open(Temp_filename, [raw, write,delayed_write]),
-    ?PRINTDEBUG("File is open"),
-    SeqNums = write_cdr(F, S#source.pending_write_list),
-    ?PRINTDEBUG("File CDRs written, closing..."),
-    ok = file:close(F),
-    ok = file:rename(Temp_filename, Final_filename),
+    Now = now(),
+    Temp_filename = build_filename(S#source.address, Now, State#state.cdr_temp_dir, ""),
+    Final_filename = build_filename(S#source.address, Now, State#state.cdr_dir, ""), 
+    SeqNums = write_cdrs(S#source.pending_write_list, Temp_filename, Final_filename),
     cdr_file_srv:flush_pending(S#source.address,SeqNums).
 
-%% TODO - make this the same as above when debugged.
+
 log_duplicate_cdr(S, State) ->
-    {{YY,MMM,DD},{HH,MM,SS}} = calendar:now_to_universal_time(now()),
+    ?PRINTDEBUG2("Logging duplicate CDRs PID ~p",[self()]),
+    Now = now(),
+    Temp_filename = build_filename(S#source.address, Now, State#state.cdr_temp_dir, ".possible_duplicate"),
+    Final_filename = build_filename(S#source.address, Now, State#state.cdr_dir, ".possible_duplicate"), 
+    SeqNums = write_cdrs(S#source.possible_duplicate_list, Temp_filename, Final_filename),
+    cdr_file_srv:flush_pending_duplicates(S#source.address,SeqNums).
+
+
+build_filename(Address, Now, Dir, Suffix) ->
+    {{YY,MMM,DD},{HH,MM,SS}} = calendar:now_to_universal_time(Now),
     DT = io_lib:format("~4.10.0B~2.10.0B~2.10.0BT~2.10.0B~2.10.0B~2.10.0B",[YY, MMM, DD, HH, MM, SS]),
     {ok,HN} = inet:gethostname(),
-    Temp_filename = filename:join([State#state.cdr_temp_dir, "CDR-" ++ HN ++ "-" ++ DT ++ ".possible_duplicate"]), 
+    filename:join([Dir, "CDR-" ++ HN ++ "-" ++ pretty_format_address(Address) ++ "-" ++ DT ++ Suffix]).
+
+write_cdrs([], _, _) ->
+    ?PRINTDEBUG("No CDRs to write"),
+    [];
+write_cdrs(List, Temp_filename, Final_filename) ->
     ok = filelib:ensure_dir(Temp_filename),
-    Final_filename =  filename:join([State#state.cdr_dir, "CDR-" ++ HN ++ "-" ++ DT ++ ".possible_duplicate"]), 
     ok = filelib:ensure_dir(Final_filename),
     %% log data to file
     {ok, F} = file:open(Temp_filename, [raw, write, delayed_write]),
-    SeqNums = write_cdr(F, S#source.pending_write_list),
+    SeqNums = write_cdr(F, List),
     ok = file:close(F),
     ok = file:rename(Temp_filename, Final_filename),
-    cdr_file_srv:flush_pending_duplicates(S#source.address,SeqNums).
-
+    SeqNums.
 
 write_cdr(F, List) ->
     write_cdr(F, List, []).
@@ -380,7 +404,6 @@ notify_cdf({tcp, Address, Port}, Seq_nums) ->
 
 %% flushes all records when the first in the queue expires. 
 flush_pending_timer(State) ->
-    ?PRINTDEBUG("flush_pending_timer running"),
     lists:foreach(fun(S) ->
 			  TSnow = greg_now(),
 			  case S#source.pending_write_list of
@@ -391,6 +414,10 @@ flush_pending_timer(State) ->
 					  SeqNums = lists:foldl(fun({SeqNum, _, _}, Acc) ->
 									Acc ++ [SeqNum]
 								end, [], S#source.pending_write_list),
+					  Now = now(),
+					  Temp_filename = build_filename(S#source.address, Now, State#state.cdr_temp_dir, ""),
+					  Final_filename = build_filename(S#source.address, Now, State#state.cdr_dir, ""), 
+					  SeqNums = write_cdrs(S#source.pending_write_list, Temp_filename, Final_filename),
 					  gen_server:cast(?SERVER, {flush_pending_from_timer,
 								    S#source.address, SeqNums});
 				  true ->
@@ -403,12 +430,18 @@ flush_pending_timer(State) ->
 flush_duplicates_timer(State) ->
     lists:foreach(fun(S) ->
 			  TSnow = greg_now(),
-			  SeqNums = lists:foldl(fun({SeqNum, TS, _}, Acc) ->
-							if(TS+State#state.possible_duplicate_limit_seconds > TSnow) ->
-								Acc ++ [SeqNum];
-							  true -> Acc
-							end
-						end, [], S#source.possible_duplicate_list),
+			  List = lists:filter(fun({_, TS, _}) ->
+						      (TS+State#state.possible_duplicate_limit_seconds > TSnow)
+					      end, S#source.possible_duplicate_list),
+			  Now = now(),
+			  Temp_filename = build_filename(S#source.address, Now, State#state.cdr_temp_dir, ".possible_duplicate"),
+			  Final_filename = build_filename(S#source.address, Now, State#state.cdr_dir, ".possible_duplicate"), 
+			  SeqNums = write_cdrs(List, Temp_filename, Final_filename),
 			  gen_server:cast(?SERVER, {flush_pending_duplicates_from_timer, S#source.address, SeqNums})
 		  end, State#state.known_sources).
     
+
+pretty_format_address({_, {IP1,IP2,IP3,IP4},Port}) ->
+    io_lib:format("~B_~B_~B_~B-~B",[IP1, IP2, IP3, IP4, Port]);
+pretty_format_address({_, {IP1,IP2,IP3,IP4,IP5,IP6,IP7,IP8},Port}) ->
+    io_lib:format("~B_~B_~B_~B_~B_~B_~B_~B-~B",[IP1, IP2, IP3, IP4, IP5, IP6, IP7, IP8, Port]).
