@@ -177,7 +177,7 @@ decode_ie(<<253:8, Len:16, SeqNum:16, Rest/binary>>, _Len) ->
 decode_ie_data_record_packet(<<252:8, 
 			      Len:16, 
 			      Num_records:8,
-			      1:8, %% only ASN.1 BER (!)
+			      $1:8, %% only ASN.1 BER (!) encoded as ascii
 			      Rec_format:2/binary,
 			      Rest/binary>>, _TotalLen) ->
     _Decoded_rec_format = decode_ie_data_record_format_version(Rec_format), %% Not going to do anything special with it right now.
