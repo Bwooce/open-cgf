@@ -75,7 +75,7 @@ init([]) ->
 			  send_echo_request(Socket, Version, {DestIP,DestPort}),
 			  send_node_alive_request(Socket, Version, {DestIP, DestPort}, IP)
 		  end, CDFs),			  
-    {ok, #state{socket=Socket, ip=IP, port=Port, version=Version}}.
+    {ok, #state{socket=Socket, ip=IP, port=Port, version=Version, known_sources=orddict:new()}}.
 
 %%--------------------------------------------------------------------
 %% Function: %% handle_call(Request, From, State) -> {reply, Reply, State} |
@@ -158,8 +158,18 @@ handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
 				       {InIP, InPort}),
 		    {noreply, State};
 		echo_response ->
-		    %% TODO check known_sources restart_counter values against this one, and restart CDR logging if changed
-		    {noreply, State}
+		    {{count, NewCount}, _} = Message,
+		    case orddict:find({udp, InIP, InPort}, State#state.known_sources) of
+			{ok, NewCount} ->
+			    {noreply, State}; %% endpoint is known and has not restarted
+			{ok, OldCount} ->
+			    %% endpoint is known and has restarted. Sound the klaxxon.
+			    error_logger:warning_msg("CDF ~p:~p has restarted, saving pending CDRs and resetting sequencing",[InIP,InPort]),
+			    cdr_file_srv:reset({udp, InIP, InPort}),
+			    {noreply, State#state{known_sources=orddict:store({udp, InIP, InPort}, NewCount, State#state.known_sources)}};
+			error ->
+			    {noreply, State#state{known_sources=orddict:store({udp, InIP, InPort}, NewCount, State#state.known_sources)}}
+		    end
 	    end;
 	{error, Reason} ->
 	    %% Send back error of some kind
