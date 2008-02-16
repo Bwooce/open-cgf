@@ -158,6 +158,13 @@ decode_ie(<<254:8, 4:8, Address:4, Rest/binary>>, _Len) ->
 decode_ie(<<254:8, 16:8, Address:16, Rest/binary>>, _Len) ->
     {{ipv6, Address}, Rest};
 
+decode_ie(<<249:8, Len:16, SeqNum:16, Rest/binary>>, _Len) ->
+    decode_ie_sequence_numbers(Rest, Len, [SeqNum]);
+decode_ie(<<250:8, Len:16, SeqNum:16, Rest/binary>>, _Len) ->
+    decode_ie_sequence_numbers(Rest, Len, [SeqNum]);
+decode_ie(<<253:8, Len:16, SeqNum:16, Rest/binary>>, _Len) ->
+    decode_ie_sequence_numbers(Rest, Len, [SeqNum]);
+
 decode_ie(<<Other:8, Rest/binary>>, Len) when Other > 127 ->
     Bits = 8*(Len-1),
     <<Content:Bits, Rest2/binary>> = Rest,
@@ -165,14 +172,8 @@ decode_ie(<<Other:8, Rest/binary>>, Len) when Other > 127 ->
 decode_ie(<<_Other:8, Length:16, Rest/binary>>, _Len) ->
     Bits =8*Length,
     <<Content:Bits, Rest2>> = Rest,
-    {{private_extension, Length, Content}, Rest2};
+    {{private_extension, Length, Content}, Rest2}.
 
-decode_ie(<<249:8, Len:16, SeqNum:16, Rest/binary>>, _Len) ->
-    decode_ie_sequence_numbers(Rest, Len, [SeqNum]);
-decode_ie(<<250:8, Len:16, SeqNum:16, Rest/binary>>, _Len) ->
-    decode_ie_sequence_numbers(Rest, Len, [SeqNum]);
-decode_ie(<<253:8, Len:16, SeqNum:16, Rest/binary>>, _Len) ->
-    decode_ie_sequence_numbers(Rest, Len, [SeqNum]).
 
 decode_ie_data_record_packet(<<252:8, 
 			      Len:16, 

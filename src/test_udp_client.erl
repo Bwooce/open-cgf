@@ -17,18 +17,18 @@ start() ->
     ets:new(test, [set, named_table, private]),
     ets:insert(test, {seqnum, 65500}), %% let's test rollover while we are here
     %% send 50 packets
-    send_cdrs(Socket, Address, Version, 50),
+ %   send_cdrs(Socket, Address, Version, 50),
     %% send 50 possible_dups
     send_dup_cdrs(Socket, Address, Version, 50),
     %% cancel 25 possible_dups
     SkipSeqNum = next_seqnum(), %% get current, plus a test to ensure a missing seqnum doesn't hurt
     send_cancel_cdr(Socket, Address, Version, next_seqnum(), lists:seq(SkipSeqNum-51, SkipSeqNum-26)),
     %% release 20 possible_dups (5 remain)
- %   send_release_cdr(Socket, Address, Version, next_seqnum(), lists:seq(SkipSeqNum-26, SkipSeqNum-6)),
-    send_cdrs(Socket, Address, Version+1, 50),
-    send_cdrs(Socket, Address, Version+2, 50),
-    send_dup_cdr(Socket, Address, 2, 32000), %% wildcard, should stay buffered for a while
-    send_cdr(Socket, Address, 2, 32001), %% wildcard, should stay buffered for a while
+    send_release_cdr(Socket, Address, Version, next_seqnum(), lists:seq(SkipSeqNum-26, SkipSeqNum-6)),
+ %   send_cdrs(Socket, Address, Version+1, 50),
+ %   send_cdrs(Socket, Address, Version+2, 50),
+ %   send_dup_cdr(Socket, Address, 2, 32000), %% wildcard, should stay buffered for a while
+ %   send_cdr(Socket, Address, 2, 32001), %% wildcard, should stay buffered for a while
     gen_udp:close(Socket),
     ets:delete(test).
 

@@ -135,13 +135,17 @@ handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
 							       request_accepted, [Header#gtpp_header.seqnum]),
 			    {noreply, State};
 			cancel_packets ->
-			    cdr_file_srv:remove_possible_dup({udp, InIP, InPort}, Header#gtpp_header.seqnum, Message),
+			    {{cancel_packets, {sequence_numbers, SeqNums}}, _} = Message,
+			    ?PRINTDEBUG2("Cancelling packets with seqnums ~p",[SeqNums]),
+			    cdr_file_srv:remove_possible_dup({udp, InIP, InPort}, SeqNums),
 			    send_data_record_transfer_response(InSocket, State#state.version, Header#gtpp_header.seqnum,
 							       {InIP, InPort}, 
 							       request_accepted, [Header#gtpp_header.seqnum]),
 			    {noreply, State};
 			release_packets ->
-			    cdr_file_srv:commit_possible_dup({udp, InIP, InPort}, Header#gtpp_header.seqnum, Message),
+			    {{release_packets, {sequence_numbers, SeqNums}}, _} = Message,
+			    ?PRINTDEBUG2("Releasing packets with seqnums ~p",[SeqNums]),
+			    cdr_file_srv:commit_possible_dup({udp, InIP, InPort}, SeqNums),
 			    send_data_record_transfer_response(InSocket, State#state.version, Header#gtpp_header.seqnum,
 							       {InIP, InPort}, 
 							       request_accepted, [Header#gtpp_header.seqnum]),

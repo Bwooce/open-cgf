@@ -151,22 +151,27 @@ handle_cast({log_possible_dup, SourceKey, Seq_num, Data}, State) ->
     {ok, NewState} = buffer_duplicate_cdr(SourceKey, Seq_num, Data, State),
     {noreply, NewState};
 
-handle_cast({remove_possible_dup, SourceKey, Seq_num}, State) ->
+handle_cast({remove_possible_dup, SourceKey, Seq_nums}, State) ->
     S = get_source(SourceKey, State),
-    NewS = S#source{possible_duplicate_list=lists:keydelete(Seq_num, 1, S#source.possible_duplicate_list)}, %% remove the CDR, if possible
+    NewS = lists:foldl(fun(Seq_num, OldS) ->
+			      OldS#source{possible_duplicate_list=
+					  lists:keydelete(Seq_num, 1, OldS#source.possible_duplicate_list)} %% remove the CDR, if possible
+		      end, S, Seq_nums),		       
     {noreply, State#state{known_sources=lists:keystore(SourceKey, 2, State#state.known_sources, NewS)}};
 
-handle_cast({commit_possible_dup, SourceKey, Seq_num},State) ->
+handle_cast({commit_possible_dup, SourceKey, Seq_nums},State) ->
     S = get_source(SourceKey, State),
-    case lists:keysearch(Seq_num, 1, S#source.possible_duplicate_list) of
-	false ->
-	    {noreply, State}; %% wasn't in the list, can't do much
-	{value, CDR} ->
-	    NewS = S#source{possible_duplicate_list=lists:keydelete(Seq_num, 1, S#source.possible_duplicate_list), %% remove the CDR
-			    pending_records=S#source.pending_records+1,
-			    pending_write_list=S#source.pending_write_list++[CDR]}, %% add it to the new list
-	    {noreply, State#state{known_sources=lists:keystore(SourceKey, 2, State#state.known_sources, NewS)}}
-    end;
+    NewS = lists:foldl(fun(Seq_num, OldS) ->
+			   case lists:keysearch(Seq_num, 1, OldS#source.possible_duplicate_list) of
+			       false ->
+				   OldS; %% wasn't in the list, can't do much
+			       {value, CDR} ->
+				   OldS#source{possible_duplicate_list=lists:keydelete(Seq_num, 1, OldS#source.possible_duplicate_list), %% remove the CDR
+					    pending_records=OldS#source.pending_records+1,
+					    pending_write_list=OldS#source.pending_write_list++[CDR]} %% add it to the new list
+			   end
+		      end, S, Seq_nums),
+    {noreply, State#state{known_sources=lists:keystore(SourceKey, 2, State#state.known_sources, NewS)}};
 
 handle_cast({flush_pending, _, []}, State) ->
     {noreply, State};
