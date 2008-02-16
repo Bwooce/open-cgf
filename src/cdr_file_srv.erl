@@ -32,6 +32,7 @@
 
 %% API
 -export([start_link/0, log/3, log_possible_dup/3, commit_possible_dup/2, remove_possible_dup/2, reset/1]).
+-export([print_state/0]).
 
 %% internal API
 -export([log_cdr/2,log_duplicate_cdr/2,flush_pending/2,flush_pending_duplicates/2]).
@@ -88,7 +89,9 @@ flush_pending_duplicates(SourceKey, Seq_nums) ->
 
 reset(SourceKey) ->
     gen_server:cast(?SERVER, {reset, SourceKey}).
-    
+
+print_state() ->    
+    gen_server:cast(?SERVER, {print_state}).
 
 %%====================================================================
 %% gen_server callbacks
@@ -237,7 +240,12 @@ handle_cast({reset, SourceKey}, State) ->
 		    cdr_writer_pid=none},
     {noreply, State#state{known_sources=lists:keystore(SourceKey, 2, State#state.known_sources, NewS)}};    
 
-handle_cast(_Msg, State) ->
+handle_cast({print_state}, State) ->
+    error_logger:info_msg("Requested state printout:~n~p~n",[State]),
+    {noreply, State};
+
+handle_cast(Msg, State) ->
+    error_logger:warning_msg("Got unhandled cast in cdr_file_srv. Msg was ~p",[Msg]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -323,7 +331,7 @@ buffer_duplicate_cdr(SourceKey, Seq_num, Data, State) ->
 	    error_logger:warning_msg("Ignoring duplicate sequence number ~p from ~p",[Seq_num, SourceKey]),
 	    {ok, NewState}; %% ignore update as it is already in the queue
 	false ->
-	    NewS = S#source{pending_write_list =  S#source.possible_duplicate_list ++ [{Seq_num, TS, Data}]},
+	    NewS = S#source{possible_duplicate_list = S#source.possible_duplicate_list ++ [{Seq_num, TS, Data}]},
 	    KS = lists:keystore(SourceKey, 2, State#state.known_sources, NewS),
 	    {ok, NewState#state{known_sources=KS}}
     end.
@@ -356,7 +364,7 @@ check_pending_buffer(_,_,State) ->
 check_duplicate_buffer(TS, S, State) when S#source.cdr_writer_pid == none ->
     ?PRINTDEBUG("check_duplicate_buffer state"),
     TScomp = oldest_TS(S#source.possible_duplicate_list)+State#state.file_age_limit_seconds,
-    if (TScomp < TS) or length(S#source.possible_duplicate_list) > State#state.file_record_limit ->
+    if (TScomp < TS) or length(S#source.possible_duplicate_list) > State#state.possible_duplicate_limit_seconds ->
 	    Pid = spawn_link(?MODULE, log_duplicate_cdr, [S, State]),  %% will write
 	    NewS = S#source{cdr_writer_pid = Pid},
 	    State#state{known_sources=lists:keystore(S#source.address, 2, State#state.known_sources, NewS)};

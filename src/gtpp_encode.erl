@@ -27,6 +27,7 @@
 -export([node_alive_request/4, node_alive_request/5, node_alive_response/3]).
 -export([redirection_request/4, redirection_request/5, redirection_request/6, redirection_response/2, redirection_response/4]).
 -export([data_record_transfer_request/5, data_record_transfer_response/5]).
+-export([ie_data_record_packet/3]).
 
 -include("open-cgf.hrl").
 -include("gtp.hrl").
@@ -284,3 +285,27 @@ cause({cause, reject, _Value}) ->
     %% generic reject cause
     cause(request_not_fulfilled).
 
+
+ie_data_record_packet(Records, Record_format, Extensions) ->
+    CDRs = list_to_binary(cdrs(Records)),
+    Len = size(CDRs),
+    Num_records = length(Records),
+    Enc_rec_format = ie_data_record_format_version(Record_format),
+    <<252:8, 
+     Len:16, 
+     Num_records:8,
+     $1:8, %% only ASN.1 BER (!) encoded as ascii
+     Enc_rec_format:2/binary,
+     CDRs/binary, Extensions/binary>>.
+
+cdrs(Records) ->
+    cdrs(Records, []).
+cdrs([], Acc) ->
+    Acc;
+cdrs([Record|Rest], Acc) ->
+    Rec_len = length(Record),
+    Bin = list_to_binary(Record),
+    cdrs(Rest, Acc ++ [<<Rec_len:16, Bin/binary>>]).
+
+ie_data_record_format_version({App_ID, Release_ID, Version}) ->
+    <<App_ID:4, Release_ID:4, Version:8>>.
