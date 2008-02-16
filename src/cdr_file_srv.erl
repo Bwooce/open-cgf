@@ -177,6 +177,7 @@ handle_cast({flush_pending, SourceKey, SeqNums}, State) ->
 		    cdr_writer_pid=none,
 		    pending_records=S#source.pending_records-length(SeqNums),
 		    pending_write_list=delete_seqnums(S#source.pending_write_list, SeqNums)},
+    ?PRINTDEBUG2("Finished flushing, NewS is ~p",[NewS]),
     {noreply, State#state{known_sources=lists:keystore(SourceKey, 2, State#state.known_sources, NewS) }};
 
 handle_cast({flush_pending_from_timer, _, []}, State) ->
@@ -192,6 +193,7 @@ handle_cast({flush_pending_from_timer, SourceKey, SeqNums}, State) ->
 	    NewS = S#source{old_seq_nums_ringbuffer=RB, 
 			    pending_records=S#source.pending_records-length(SeqNums),
 			    pending_write_list=delete_seqnums(S#source.pending_write_list, SeqNums)},
+	    ?PRINTDEBUG2("Finished timer flushing, NewS is ~p",[NewS]),
 	    {noreply, State#state{known_sources=lists:keystore(SourceKey, 2, State#state.known_sources, NewS) }};
 	_ ->
 	    {noreply, State}
@@ -494,11 +496,15 @@ flush_duplicates_timer(State) ->
 			  List = lists:filter(fun({_, TS, _}) ->
 						      (TS+State#state.possible_duplicate_limit_seconds > TSnow)
 					      end, S#source.possible_duplicate_list),
-			  Now = now(),
-			  Temp_filename = build_filename(S#source.address, Now, State#state.cdr_temp_dir, ".possible_duplicate"),
-			  Final_filename = build_filename(S#source.address, Now, State#state.cdr_dir, ".possible_duplicate"), 
-			  SeqNums = write_cdrs(List, Temp_filename, Final_filename),
-			  gen_server:cast(?SERVER, {flush_pending_duplicates_from_timer, S#source.address, SeqNums})
+			  case List of 
+			      [] -> ok;
+			      _ ->
+				  Now = now(),
+				  Temp_filename = build_filename(S#source.address, Now, State#state.cdr_temp_dir, ".possible_duplicate"),
+				  Final_filename = build_filename(S#source.address, Now, State#state.cdr_dir, ".possible_duplicate"), 
+				  SeqNums = write_cdrs(List, Temp_filename, Final_filename),
+				  gen_server:cast(?SERVER, {flush_pending_duplicates_from_timer, S#source.address, SeqNums})
+			  end
 		  end, State#state.known_sources).
     
 

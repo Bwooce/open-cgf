@@ -36,7 +36,7 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
 
--record(state, {socket, ip, port, version, known_sources}).
+-record(state, {socket, ip, port, version, known_sources, altCGF}).
 
 %%====================================================================
 %% API
@@ -70,12 +70,14 @@ init([]) ->
     error_logger:info_msg("open-cgf listening on ~p:~p UDP~n",[IP, Port]),
     {ok, CDFs} = application:get_env('open-cgf', cdf_list),
     {ok, Version} = application:get_env('open-cgf', gtpp_version),
+    {ok, AltCGF} = application:get_env('open-cgf', peer_cgf),
     lists:foreach(fun({DestIP, DestPort}) ->
 			  error_logger:info_msg("open-cgf sending echo request and node_alive request to ~p:~p~n",[DestIP, DestPort]),
 			  send_echo_request(Socket, Version, {DestIP,DestPort}),
 			  send_node_alive_request(Socket, Version, {DestIP, DestPort}, IP)
 		  end, CDFs),			  
-    {ok, #state{socket=Socket, ip=IP, port=Port, version=Version, known_sources=orddict:new()}}.
+    process_flag(trap_exit, true),
+    {ok, #state{socket=Socket, ip=IP, port=Port, version=Version, known_sources=orddict:new(), altCGF=AltCGF}}.
 
 %%--------------------------------------------------------------------
 %% Function: %% handle_call(Request, From, State) -> {reply, Reply, State} |
@@ -162,7 +164,7 @@ handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
 		    case orddict:find({udp, InIP, InPort}, State#state.known_sources) of
 			{ok, NewCount} ->
 			    {noreply, State}; %% endpoint is known and has not restarted
-			{ok, OldCount} ->
+			{ok, _} ->
 			    %% endpoint is known and has restarted. Sound the klaxxon.
 			    error_logger:warning_msg("CDF ~p:~p has restarted, saving pending CDRs and resetting sequencing",[InIP,InPort]),
 			    cdr_file_srv:reset({udp, InIP, InPort}),
@@ -172,7 +174,7 @@ handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
 		    end
 	    end;
 	{error, Reason} ->
-	    %% Send back error of some kind
+	    %% Send back error of some kind TODO
 	    {noreply, State}
     end;
 
@@ -187,7 +189,11 @@ handle_info(Info, State) ->
 %% cleaning up. When it returns, the gen_server terminates with Reason.
 %% The return value is ignored.
 %%--------------------------------------------------------------------
-terminate(_Reason, _State) ->
+terminate(Reason, State) ->
+    error_logger:info_msg("Closing open-cgf udp server for reason ~p. Sending redirection requests to all known CDFs", [Reason]),
+    lists:foreach(fun({udp, DestIP, DestPort}) ->
+			  send_redirection_request(State#state.socket, State#state.version, {DestIP, DestPort}, State#state.altCGF)
+		  end, orddict:to_list(State#state.known_sources)),
     ok.
 
 %%--------------------------------------------------------------------
@@ -223,3 +229,12 @@ send_node_alive_response(Socket, Version, SeqNum, {InIP, InPort}) ->
     R = gtpp_encode:node_alive_response(Version, SeqNum, << >>), 
     ok = gen_udp:send(Socket, InIP, InPort, R).
     
+send_redirection_request(Socket, Version, {DestIP, DestPort}, AltCGF) ->
+    SeqNum = 'open-cgf_state':get_next_seqnum({DestIP, DestPort}),
+    R = case AltCGF of 
+	    none ->
+		gtpp_encode:redirection_request(Version, SeqNum, node_about_to_go_down, << >>);
+	    _ ->
+		gtpp_encode:redirection_request(Version, SeqNum, node_about_to_go_down, AltCGF, << >>)
+	end,
+    ok = gen_udp:send(Socket, DestIP, DestPort, R).
