@@ -17,7 +17,7 @@ start() ->
     ets:new(test, [set, named_table, private]),
     ets:insert(test, {seqnum, 65500}), %% let's test rollover while we are here
     %% send 50 packets
- %   send_cdrs(Socket, Address, Version, 50),
+    send_cdrs(Socket, Address, Version, 50),
     %% send 50 possible_dups
     send_dup_cdrs(Socket, Address, Version, 50),
     %% cancel 25 possible_dups
@@ -25,10 +25,10 @@ start() ->
     send_cancel_cdr(Socket, Address, Version, next_seqnum(), lists:seq(SkipSeqNum-51, SkipSeqNum-26)),
     %% release 20 possible_dups (5 remain)
     send_release_cdr(Socket, Address, Version, next_seqnum(), lists:seq(SkipSeqNum-26, SkipSeqNum-6)),
- %   send_cdrs(Socket, Address, Version+1, 50),
- %   send_cdrs(Socket, Address, Version+2, 50),
- %   send_dup_cdr(Socket, Address, 2, 32000), %% wildcard, should stay buffered for a while
- %   send_cdr(Socket, Address, 2, 32001), %% wildcard, should stay buffered for a while
+    send_cdrs(Socket, Address, Version+1, 50),
+    send_cdrs(Socket, Address, Version+2, 50),
+    send_dup_cdr(Socket, Address, 2, 32000), %% wildcard, should stay buffered for a while
+    send_empty_cdr(Socket, Address, 2, 32001), %% wildcard, should stay buffered for a while
     gen_udp:close(Socket),
     ets:delete(test).
 
@@ -77,6 +77,11 @@ send_cdrs(Socket, Address, Version, Count) ->
 
 send_cdr(Socket, {DestIP, DestPort}, Version, SeqNum) ->
     DP = gtpp_encode:ie_data_record_packet(["TEST CDR-"++integer_to_list(SeqNum),"TEST CDR2...-"++integer_to_list(SeqNum)], {1,1,1}, << >>),
+    DRTR = gtpp_encode:data_record_transfer_request(Version, SeqNum, data_record_packet, DP, << >>),
+    gen_udp:send(Socket, DestIP, DestPort, DRTR).
+
+send_empty_cdr(Socket, {DestIP, DestPort}, Version, SeqNum) ->
+    DP = gtpp_encode:ie_data_record_packet([], {1,1,1}, << >>),
     DRTR = gtpp_encode:data_record_transfer_request(Version, SeqNum, data_record_packet, DP, << >>),
     gen_udp:send(Socket, DestIP, DestPort, DRTR).
 

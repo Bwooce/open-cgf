@@ -30,7 +30,7 @@
 -include("gtp.hrl").
 
 %% API
--export([start_link/0, confirm/2]).
+-export([start_link/0, confirm/3]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -48,9 +48,9 @@
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
-confirm(Address, SeqNums) ->
-    error_logger:info_msg("Written sequence numbers ~p",[SeqNums]),
-    gen_server:call(?SERVER, {confirm, Address, SeqNums}).
+confirm(Address, SeqNums, Cause) ->
+    error_logger:info_msg("Reponding to sequence numbers ~p with cause ~p",[SeqNums, Cause]),
+    gen_server:call(?SERVER, {confirm, Address, SeqNums, Cause}).
 
 %%====================================================================
 %% gen_server callbacks
@@ -88,11 +88,11 @@ init([]) ->
 %%                                      {stop, Reason, State}
 %% Description: Handling call messages
 %%--------------------------------------------------------------------
-handle_call({confirm, {IP, Port}, SeqNums}, _From, State) ->
+handle_call({confirm, {IP, Port}, SeqNums, Cause}, _From, State) ->
     SeqNum = hd(SeqNums),
     send_data_record_transfer_response(State#state.socket, State#state.version, SeqNum, 
 				       {IP, Port}, 
-				       request_accepted, SeqNums),
+				       Cause, SeqNums),
     {reply, ok, State};
 
 handle_call(_Request, _From, State) ->
@@ -137,7 +137,7 @@ handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
 			cancel_packets ->
 			    {{cancel_packets, {sequence_numbers, SeqNums}}, _} = Message,
 			    ?PRINTDEBUG2("Cancelling packets with seqnums ~p",[SeqNums]),
-			    cdr_file_srv:remove_possible_dup({udp, InIP, InPort}, SeqNums),
+			    cdr_file_srv:remove_possible_dup({udp, InIP, InPort}, Header#gtpp_header.seqnum, SeqNums),
 			    send_data_record_transfer_response(InSocket, State#state.version, Header#gtpp_header.seqnum,
 							       {InIP, InPort}, 
 							       request_accepted, [Header#gtpp_header.seqnum]),
@@ -145,7 +145,7 @@ handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
 			release_packets ->
 			    {{release_packets, {sequence_numbers, SeqNums}}, _} = Message,
 			    ?PRINTDEBUG2("Releasing packets with seqnums ~p",[SeqNums]),
-			    cdr_file_srv:commit_possible_dup({udp, InIP, InPort}, SeqNums),
+			    cdr_file_srv:commit_possible_dup({udp, InIP, InPort}, Header#gtpp_header.seqnum, SeqNums),
 			    send_data_record_transfer_response(InSocket, State#state.version, Header#gtpp_header.seqnum,
 							       {InIP, InPort}, 
 							       request_accepted, [Header#gtpp_header.seqnum]),

@@ -31,7 +31,7 @@
 -include("open-cgf.hrl").
 
 %% API
--export([start_link/0, log/3, log_possible_dup/3, commit_possible_dup/2, remove_possible_dup/2, reset/1]).
+-export([start_link/0, log/3, log_possible_dup/3, commit_possible_dup/3, remove_possible_dup/3, reset/1]).
 -export([print_state/0]).
 
 %% internal API
@@ -75,11 +75,11 @@ log(Source, Seq_num, Data) ->
 log_possible_dup(SourceKey, Seq_num, Data) ->
     gen_server:cast(?SERVER, {log_possible_dup, SourceKey, Seq_num, Data}).
 
-commit_possible_dup(SourceKey, Seq_num) ->
-    gen_server:cast(?SERVER, {commit_possible_dup, SourceKey, Seq_num}).
+commit_possible_dup(SourceKey, Seq_num, Seq_nums) ->
+    gen_server:cast(?SERVER, {commit_possible_dup, SourceKey, Seq_num, Seq_nums}).
 
-remove_possible_dup(SourceKey, Seq_num) ->
-    gen_server:cast(?SERVER, {remove_possible_dup, SourceKey, Seq_num}).
+remove_possible_dup(SourceKey, Seq_num, Seq_nums) ->
+    gen_server:cast(?SERVER, {remove_possible_dup, SourceKey, Seq_num, Seq_nums}).
 
 flush_pending(SourceKey, Seq_nums) ->
     gen_server:cast(?SERVER, {flush_pending, SourceKey, Seq_nums}).
@@ -151,34 +151,39 @@ handle_cast({log_possible_dup, SourceKey, Seq_num, Data}, State) ->
     {ok, NewState} = buffer_duplicate_cdr(SourceKey, Seq_num, Data, State),
     {noreply, NewState};
 
-handle_cast({remove_possible_dup, SourceKey, Seq_nums}, State) ->
+handle_cast({remove_possible_dup, SourceKey, Seq_num, Seq_nums}, State) ->
     S = get_source(SourceKey, State),
-    NewS = lists:foldl(fun(Seq_num, OldS) ->
-			      OldS#source{possible_duplicate_list=
-					  lists:keydelete(Seq_num, 1, OldS#source.possible_duplicate_list)} %% remove the CDR, if possible
+    NewS = lists:foldl(fun(SSeq_num, OldS) ->
+			       OldS#source{possible_duplicate_list=
+					   lists:keydelete(SSeq_num, 1, OldS#source.possible_duplicate_list)} %% remove the CDR, if possible
 		      end, S, Seq_nums),		       
-    {noreply, State#state{known_sources=lists:keystore(SourceKey, 2, State#state.known_sources, NewS)}};
+    RB=update_ringbuffer(NewS#source.old_seq_nums_ringbuffer, [Seq_num], ?MAXRINGBUF),
+    {noreply, State#state{known_sources=lists:keystore(SourceKey, 2, State#state.known_sources, 
+						       NewS#source{old_seq_nums_ringbuffer=RB})}};
 
-handle_cast({commit_possible_dup, SourceKey, Seq_nums},State) ->
+handle_cast({commit_possible_dup, SourceKey, Seq_num, Seq_nums},State) ->
     S = get_source(SourceKey, State),
-    NewS = lists:foldl(fun(Seq_num, OldS) ->
-			   case lists:keysearch(Seq_num, 1, OldS#source.possible_duplicate_list) of
+    NewS = lists:foldl(fun(SSeq_num, OldS) ->
+			   case lists:keysearch(SSeq_num, 1, OldS#source.possible_duplicate_list) of
 			       false ->
 				   OldS; %% wasn't in the list, can't do much
 			       {value, CDR} ->
-				   OldS#source{possible_duplicate_list=lists:keydelete(Seq_num, 1, OldS#source.possible_duplicate_list), %% remove the CDR
+				   OldS#source{possible_duplicate_list=
+					       lists:keydelete(SSeq_num, 1, OldS#source.possible_duplicate_list), %% remove the CDR
 					    pending_records=OldS#source.pending_records+1,
 					    pending_write_list=OldS#source.pending_write_list++[CDR]} %% add it to the new list
 			   end
 		      end, S, Seq_nums),
-    {noreply, State#state{known_sources=lists:keystore(SourceKey, 2, State#state.known_sources, NewS)}};
+        RB=update_ringbuffer(NewS#source.old_seq_nums_ringbuffer, [Seq_num], ?MAXRINGBUF),
+    {noreply, State#state{known_sources=lists:keystore(SourceKey, 2, State#state.known_sources, 
+						       NewS#source{old_seq_nums_ringbuffer=RB})}};
 
 handle_cast({flush_pending, _, []}, State) ->
     {noreply, State};
 handle_cast({flush_pending, SourceKey, SeqNums}, State) ->
     S = get_source(SourceKey, State),
     %%send ack via gtpp_udp_server
-    notify_cdf(SourceKey, SeqNums),
+    notify_cdf(SourceKey, SeqNums, request_accepted),
     %% remove seq
     RB=update_ringbuffer(S#source.old_seq_nums_ringbuffer, SeqNums, ?MAXRINGBUF),
     NewS = S#source{old_seq_nums_ringbuffer=RB, 
@@ -195,7 +200,7 @@ handle_cast({flush_pending_from_timer, SourceKey, SeqNums}, State) ->
     case S#source.cdr_writer_pid of
 	none ->  
 	    %%send ack via gtpp_udp_server
-	    notify_cdf(SourceKey, SeqNums),
+	    notify_cdf(SourceKey, SeqNums, request_accepted),
 	    %% remove seq
 	    RB=update_ringbuffer(S#source.old_seq_nums_ringbuffer, SeqNums, ?MAXRINGBUF),
 	    NewS = S#source{old_seq_nums_ringbuffer=RB, 
@@ -310,36 +315,53 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 %%% Internal functions
 %%--------------------------------------------------------------------
+buffer_cdr(SourceKey, Seq_num, {{_,[]},_}, State) ->
+    ?PRINTDEBUG("Buffering CDR with no CDR - responding immediately"),
+    S = get_source(SourceKey, State),
+    NewS = case check_duplicate(S, Seq_num) of 
+	       true -> 
+		   notify_cdf(SourceKey, [Seq_num], request_already_fulfilled),
+		   S;
+	       false ->
+		   notify_cdf(SourceKey, [Seq_num], request_accepted),
+		   S#source{old_seq_nums_ringbuffer=
+			    update_ringbuffer(S#source.old_seq_nums_ringbuffer, [Seq_num], ?MAXRINGBUF)}
+	   end,
+    KS = lists:keystore(SourceKey, 2, State#state.known_sources, NewS),
+    {ok, State#state{known_sources=KS}};
+
 buffer_cdr(SourceKey, Seq_num, Data, State) ->
     ?PRINTDEBUG2("Buffering CDR for ~p, seqnum ~p",[SourceKey, Seq_num]),
     NewState = check_buffer(SourceKey, State),
     TS = greg_now(),
     S = get_source(SourceKey, NewState),
-    case check_duplicate(S, Seq_num) of 
-	true ->
-	    error_logger:warning_msg("Ignoring duplicate sequence number ~p from ~p",[Seq_num, SourceKey]),
-	    {ok, NewState}; %% ignore update as it is already in the queue
-	false ->
-	    NewS = S#source{pending_write_list =  S#source.pending_write_list ++ [{Seq_num, TS, Data}], 
-			    pending_records = S#source.pending_records+1},	    
-	    KS = lists:keystore(SourceKey, 2, State#state.known_sources, NewS),
-	    {ok, NewState#state{known_sources=KS}}
-    end.
+    NewS = case check_duplicate(S, Seq_num) of 
+	       true ->
+		   error_logger:warning_msg("Duplicate sequence number ~p from ~p",[Seq_num, SourceKey]),
+		   notify_cdf(SourceKey, [Seq_num], request_already_fulfilled),
+		   S; %% update already in queue
+	       false ->
+		   S#source{pending_write_list =  S#source.pending_write_list ++ [{Seq_num, TS, Data}], 
+			    pending_records = S#source.pending_records+1}
+	   end,
+    KS = lists:keystore(SourceKey, 2, NewState#state.known_sources, NewS),
+    {ok, NewState#state{known_sources=KS}}.
 
 buffer_duplicate_cdr(SourceKey, Seq_num, Data, State) ->
     ?PRINTDEBUG2("Buffering possible duplicate CDR for ~p, seqnum ~p",[SourceKey, Seq_num]),
     NewState = check_buffer(SourceKey, State),
     TS = greg_now(),
     S = get_source(SourceKey, NewState),
-    case check_duplicate(S, Seq_num) of 
-	true ->
-	    error_logger:warning_msg("Ignoring duplicate sequence number ~p from ~p",[Seq_num, SourceKey]),
-	    {ok, NewState}; %% ignore update as it is already in the queue
-	false ->
-	    NewS = S#source{possible_duplicate_list = S#source.possible_duplicate_list ++ [{Seq_num, TS, Data}]},
-	    KS = lists:keystore(SourceKey, 2, State#state.known_sources, NewS),
-	    {ok, NewState#state{known_sources=KS}}
-    end.
+    NewS = case check_duplicate(S, Seq_num) of 
+	       true ->
+		   error_logger:warning_msg("Duplicate sequence number ~p from ~p",[Seq_num, SourceKey]),
+		   notify_cdf(SourceKey, [Seq_num], request_related_to_duplicates_already_fulfilled),
+		   S;
+	       false ->
+		   S#source{possible_duplicate_list = S#source.possible_duplicate_list ++ [{Seq_num, TS, Data}]}
+	   end,
+    KS = lists:keystore(SourceKey, 2, NewState#state.known_sources, NewS),
+    {ok, NewState#state{known_sources=KS}}.
 
 %% check to see if the buffers need to be flushed to disk.
 check_buffer(SourceKey, State) ->
@@ -473,10 +495,10 @@ check_duplicate(S, Seq_num) ->
 	    end
     end.
 
-notify_cdf({udp, Address, Port}, Seq_nums) ->
-    gtpp_udp_server:confirm({Address, Port}, Seq_nums);
-notify_cdf({tcp, Address, Port}, Seq_nums) ->
-    gtpp_tcp_server:confirm({Address, Port}, Seq_nums).
+notify_cdf({udp, Address, Port}, Seq_nums, Cause) ->
+    gtpp_udp_server:confirm({Address, Port}, Seq_nums, Cause);
+notify_cdf({tcp, Address, Port}, Seq_nums, Cause) ->
+    gtpp_tcp_server:confirm({Address, Port}, Seq_nums, Cause).
 
 %% flushes all records when the first in the queue expires. 
 flush_pending_timer(State) ->
