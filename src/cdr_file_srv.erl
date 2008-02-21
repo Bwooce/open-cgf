@@ -158,8 +158,8 @@ handle_cast({remove_possible_dup, SourceKey, Seq_num, Seq_nums}, State) ->
 					   lists:keydelete(SSeq_num, 1, OldS#source.possible_duplicate_list)} %% remove the CDR, if possible
 		      end, S, Seq_nums),		       
     RB=update_ringbuffer(NewS#source.old_seq_nums_ringbuffer, [Seq_num], ?MAXRINGBUF),
-    {noreply, State#state{known_sources=lists:keystore(SourceKey, 2, State#state.known_sources, 
-						       NewS#source{old_seq_nums_ringbuffer=RB})}};
+    {noreply, State#state{known_sources=keystore(SourceKey, 2, State#state.known_sources, 
+						 NewS#source{old_seq_nums_ringbuffer=RB})}};
 
 handle_cast({commit_possible_dup, SourceKey, Seq_num, Seq_nums},State) ->
     S = get_source(SourceKey, State),
@@ -175,8 +175,8 @@ handle_cast({commit_possible_dup, SourceKey, Seq_num, Seq_nums},State) ->
 			   end
 		      end, S, Seq_nums),
         RB=update_ringbuffer(NewS#source.old_seq_nums_ringbuffer, [Seq_num], ?MAXRINGBUF),
-    {noreply, State#state{known_sources=lists:keystore(SourceKey, 2, State#state.known_sources, 
-						       NewS#source{old_seq_nums_ringbuffer=RB})}};
+    {noreply, State#state{known_sources=keystore(SourceKey, 2, State#state.known_sources, 
+						 NewS#source{old_seq_nums_ringbuffer=RB})}};
 
 handle_cast({flush_pending, _, []}, State) ->
     {noreply, State};
@@ -191,7 +191,7 @@ handle_cast({flush_pending, SourceKey, SeqNums}, State) ->
 		    pending_records=S#source.pending_records-length(SeqNums),
 		    pending_write_list=delete_seqnums(S#source.pending_write_list, SeqNums)},
     ?PRINTDEBUG2("Finished flushing, NewS is ~p",[NewS]),
-    {noreply, State#state{known_sources=lists:keystore(SourceKey, 2, State#state.known_sources, NewS) }};
+    {noreply, State#state{known_sources=keystore(SourceKey, 2, State#state.known_sources, NewS) }};
 
 handle_cast({flush_pending_from_timer, _, []}, State) ->
     {noreply, State};
@@ -207,7 +207,7 @@ handle_cast({flush_pending_from_timer, SourceKey, SeqNums}, State) ->
 			    pending_records=S#source.pending_records-length(SeqNums),
 			    pending_write_list=delete_seqnums(S#source.pending_write_list, SeqNums)},
 	    ?PRINTDEBUG2("Finished timer flushing, NewS is ~p",[NewS]),
-	    {noreply, State#state{known_sources=lists:keystore(SourceKey, 2, State#state.known_sources, NewS) }};
+	    {noreply, State#state{known_sources=keystore(SourceKey, 2, State#state.known_sources, NewS) }};
 	_ ->
 	    {noreply, State}
     end;
@@ -221,7 +221,7 @@ handle_cast({flush_pending_duplicates, SourceKey, SeqNums}, State) ->
     NewS = S#source{old_seq_nums_ringbuffer=RB, 
 		    cdr_writer_pid=none,
 		    possible_duplicate_list=delete_seqnums(S#source.pending_write_list, SeqNums)},
-    {noreply, State#state{known_sources=lists:keystore(SourceKey, 2, State#state.known_sources, NewS) }};
+    {noreply, State#state{known_sources=keystore(SourceKey, 2, State#state.known_sources, NewS) }};
 
 handle_cast({flush_pending_duplicates_from_timer, _, []}, State) ->
     {noreply, State};
@@ -233,7 +233,7 @@ handle_cast({flush_pending_duplicates_from_timer, SourceKey, SeqNums}, State) ->
 	    RB=update_ringbuffer(S#source.old_seq_nums_ringbuffer, SeqNums, ?MAXRINGBUF),
 	    NewS = S#source{old_seq_nums_ringbuffer=RB, 
 			    possible_duplicate_list=delete_seqnums(S#source.pending_write_list, SeqNums)},
-	    {noreply, State#state{known_sources=lists:keystore(SourceKey, 2, State#state.known_sources, NewS) }};
+	    {noreply, State#state{known_sources=keystore(SourceKey, 2, State#state.known_sources, NewS) }};
 	_ ->
 	    {noreply, State} %% we can't stomp on an existing writer sessions
     end;
@@ -248,7 +248,7 @@ handle_cast({reset, SourceKey}, State) ->
 		    possible_duplicate_list=[],
 		    pending_records=0,
 		    cdr_writer_pid=none},
-    {noreply, State#state{known_sources=lists:keystore(SourceKey, 2, State#state.known_sources, NewS)}};    
+    {noreply, State#state{known_sources=keystore(SourceKey, 2, State#state.known_sources, NewS)}};    
 
 handle_cast({print_state}, State) ->
     error_logger:info_msg("Requested state printout:~n~p~n",[State]),
@@ -327,7 +327,7 @@ buffer_cdr(SourceKey, Seq_num, {{_,[]},_}, State) ->
 		   S#source{old_seq_nums_ringbuffer=
 			    update_ringbuffer(S#source.old_seq_nums_ringbuffer, [Seq_num], ?MAXRINGBUF)}
 	   end,
-    KS = lists:keystore(SourceKey, 2, State#state.known_sources, NewS),
+    KS = keystore(SourceKey, 2, State#state.known_sources, NewS),
     {ok, State#state{known_sources=KS}};
 
 buffer_cdr(SourceKey, Seq_num, Data, State) ->
@@ -344,7 +344,7 @@ buffer_cdr(SourceKey, Seq_num, Data, State) ->
 		   S#source{pending_write_list =  S#source.pending_write_list ++ [{Seq_num, TS, Data}], 
 			    pending_records = S#source.pending_records+1}
 	   end,
-    KS = lists:keystore(SourceKey, 2, NewState#state.known_sources, NewS),
+    KS = keystore(SourceKey, 2, NewState#state.known_sources, NewS),
     {ok, NewState#state{known_sources=KS}}.
 
 buffer_duplicate_cdr(SourceKey, Seq_num, Data, State) ->
@@ -360,7 +360,7 @@ buffer_duplicate_cdr(SourceKey, Seq_num, Data, State) ->
 	       false ->
 		   S#source{possible_duplicate_list = S#source.possible_duplicate_list ++ [{Seq_num, TS, Data}]}
 	   end,
-    KS = lists:keystore(SourceKey, 2, NewState#state.known_sources, NewS),
+    KS = keystore(SourceKey, 2, NewState#state.known_sources, NewS),
     {ok, NewState#state{known_sources=KS}}.
 
 %% check to see if the buffers need to be flushed to disk.
@@ -378,11 +378,11 @@ check_pending_buffer(TS, S, State) when S#source.cdr_writer_pid == none, S#sourc
 	    ?PRINTDEBUG("Spawning pending_buffer cdr writer"),
 	    Pid = spawn_link(?MODULE, log_cdr, [S, State]),  %% will write
 	    NewS = S#source{cdr_writer_pid = Pid},
-	    NewKS = lists:keystore(S#source.address, 2, State#state.known_sources, NewS),
+	    NewKS = keystore(S#source.address, 2, State#state.known_sources, NewS),
 	    State#state{known_sources=NewKS};
        true ->
 	    ?PRINTDEBUG("No pending buffers to write"),
-	    State#state{known_sources=lists:keystore(S#source.address, 2, State#state.known_sources, S)}
+	    State#state{known_sources=keystore(S#source.address, 2, State#state.known_sources, S)}
     end;
 check_pending_buffer(_,_,State) ->
     ?PRINTDEBUG("check_pending_buffer - busy writing buffer already or no records to write"),
@@ -394,9 +394,9 @@ check_duplicate_buffer(TS, S, State) when S#source.cdr_writer_pid == none ->
     if (TScomp < TS) or length(S#source.possible_duplicate_list) > State#state.possible_duplicate_limit_seconds ->
 	    Pid = spawn_link(?MODULE, log_duplicate_cdr, [S, State]),  %% will write
 	    NewS = S#source{cdr_writer_pid = Pid},
-	    State#state{known_sources=lists:keystore(S#source.address, 2, State#state.known_sources, NewS)};
+	    State#state{known_sources=keystore(S#source.address, 2, State#state.known_sources, NewS)};
        true ->
-	    State#state{known_sources=lists:keystore(S#source.address, 2, State#state.known_sources, S)}
+	    State#state{known_sources=keystore(S#source.address, 2, State#state.known_sources, S)}
     end;
 check_duplicate_buffer(_,_,State) ->
     ?PRINTDEBUG("check_duplicate_buffer state - busy writing buffer already"),
@@ -547,3 +547,11 @@ pretty_format_address({_, {IP1,IP2,IP3,IP4},Port}) ->
     io_lib:format("~B_~B_~B_~B-~B",[IP1, IP2, IP3, IP4, Port]);
 pretty_format_address({_, {IP1,IP2,IP3,IP4,IP5,IP6,IP7,IP8},Port}) ->
     io_lib:format("~B_~B_~B_~B_~B_~B_~B_~B-~B",[IP1, IP2, IP3, IP4, IP5, IP6, IP7, IP8, Port]).
+
+
+%% inefficient replacement for keystore from R12B. We will remove this in a few releases and return to lists:keystore.
+keystore(K, N, L, New) ->
+    NewList = lists:keydelete(K,N,L),
+    [New|NewList].
+
+
