@@ -1,0 +1,79 @@
+#!/bin/sh
+
+basedir=`pwd`/../
+erl=`which erl`
+delim=/
+
+ENV_PGM=`which env`
+
+
+help()
+{
+        echo "       open-cgf -i   -- interactive shell"
+        echo "       open-cgf -D   -- daemon mode - no shell"
+
+        echo ""
+
+        echo " additional options"
+        echo "            -heart     --  monitor and restart if application exits"
+
+        echo ""
+	
+	echo " stopping open-cgf"
+	echo "       open-cgf -stop"
+
+        exit 1
+}
+daemon="";
+interactive="";
+trace="";
+heart="";
+
+while [ $# -gt 0 ] 
+do
+      arg=$1
+      shift;
+      case $arg in
+	   -i)
+                interactive="true";
+		daemon="";;
+           -D)
+    	        daemon=" -detached ";;
+	   -stop)
+          	ex="$erl -noshell -pa ${basedir}/ebin -s open-cgf_ctl stop now";;
+           -sname)
+		sname=" -sname $1 "
+		shift;;
+           -name)
+		sname=" -name $1 "
+		shift;;
+           -heart)
+		heart=" -heart ";;
+	    *)
+		help
+       esac
+done
+
+
+if [ ! -z "${ex}" ]; then
+    exec ${ex} ${id}
+    exit 0
+fi
+
+
+trace="${trace} ${traceoutput}"
+
+[ -z "$daemon" ] && [ -z "$interactive" ] && help
+
+
+[ "$run_erl" = "eval" ] && [ -z "$daemon" ] && [ -z "$interactive" ] && help
+
+XEC="${daemon} ${heart} -pa ${basedir}/ebin -s 'open-cgf' "
+
+if [ -z "$heart" ] || [ -z "$daemon" ]; then
+    HEART_COMMAND="";
+else
+    export HEART_COMMAND="${ENV_PGM} HEART=true \"$erl\" $XEC";
+fi
+
+eval "exec $erl $XEC"

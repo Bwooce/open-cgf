@@ -57,6 +57,8 @@ start_link(_) ->
 %%--------------------------------------------------------------------
 init([]) ->
     {ok, StartTCP} = application:get_env('open-cgf', tcp_server), %%% only start the TCP server if required
+    CTLServer = {'CTLServer',{'open-cgf_ctl',start_link,[]},
+		     permanent,2000,worker,['open-cgf_ctl']},
     CDRFileServer = {'CDRServer',{cdr_file_srv,start_link,[]},
 		     permanent,2000,worker,[cdr_file_srv]},
     CGFState = {'CGFState',{'open-cgf_state',start_link,[]},
@@ -69,7 +71,8 @@ init([]) ->
 			 permanent,2000,worker,[gtpp_tcp_server]}];
 		    _ -> []
 		end,
-    {ok,{{one_for_all,0,1}, [CDRFileServer, CGFState, UDPServer] ++ TCPServer}}.
+    % max 10 restarts in the last 30s
+    {ok,{{one_for_all,10,30}, [CTLServer, CDRFileServer, CGFState, UDPServer] ++ TCPServer}}.
 
 %%====================================================================
 %% Internal functions

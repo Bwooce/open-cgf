@@ -14,6 +14,7 @@
 	 {tcp_server, false},                    %% start a TCP (for GTP' v0 only) server?
 	 {cdf_list, [{{65,23,156,214}, 3386}]},      %% list of CDFs to notify when CGF is initialised
 	 {listen, {{65,23,156,215},3386}},           %% which interface/port to listen on
+	 {peer_cgf, {127,0,0,1}},               %% peer to redirect traffic to when this cgf is disabled, or 'none' (without quotes)
 	 {gtpp_version, 2}			%% GTP' version to use (0-2)
 	]}
  ]}.
