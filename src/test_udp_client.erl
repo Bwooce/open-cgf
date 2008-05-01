@@ -7,12 +7,12 @@
 %%%-------------------------------------------------------------------
 -module(test_udp_client).
 
--export([start_sender/1, start/0]).
+-export([start_mockup/1, start_replay/2]).
 
 
-start() ->
+start_mockup(Address) -> %% Address is {IP,Port}, IP is {aa,bb,cc,dd}
     {ok, Socket} = gen_udp:open(3385, [binary]),
-    Address = {{65,23,156,215}, 3386},
+%%    Address = {{65,23,156,215}, 3386},
     Version = 0,
     ets:new(test, [set, named_table, private]),
     ets:insert(test, {seqnum, 65500}), %% let's test rollover while we are here
@@ -32,16 +32,16 @@ start() ->
     gen_udp:close(Socket),
     ets:delete(test).
 
-start_sender(Count) ->
+start_replay({IP,Port}, Count) ->
     {ok, Socket} = gen_udp:open(3385, [binary]),    
-    gen_udp:send(Socket, {65,23,156,215}, 3386, gtpp_encode:echo_request(2,0,<< >> )),
-    start2(Socket, Count).
+    gen_udp:send(Socket, IP, Port, gtpp_encode:echo_request(2,0,<< >> )),
+    start2(IP, Port, Socket, Count).
     
 
-start2(Socket, 0) ->
+start2(_IP, _Port, Socket, 0) ->
     gen_udp:close(Socket),
     ok;
-start2(Socket, Count) ->
+start2(IP, Port, Socket, Count) ->
     Packet = <<16#0f, 16#f0, 16#01, 16#47, Count:16, 16#7e, 16#01, 16#fc, 16#01,
 	       16#42, 16#01, 16#01, 16#15, 16#07, 16#01, 16#3c, 16#b5, 16#82, 16#01, 16#38, 16#80, 16#01, 16#13, 16#83, 16#08,
 	       16#01, 16#00, 16#00, 16#00, 16#00, 16#00, 16#00, 16#f0, 16#a4, 16#06, 16#80, 16#04, 16#a6, 16#0b, 16#00, 16#0b,
@@ -65,8 +65,8 @@ start2(Socket, Count) ->
 	       16#8c, 16#02, 16#02, 16#1e, 16#8d, 16#02, 16#0a, 16#0e, 16#8e, 16#09, 16#07, 16#08, 16#02, 16#11, 16#10, 16#34,   
 	       16#2d, 16#04, 16#00>>,
 
-    ok = gen_udp:send(Socket, {65,23,156,215}, 3386, Packet),
-    start2(Socket, Count-1).
+    ok = gen_udp:send(Socket, IP, Port, Packet),
+    start2(IP, Port, Socket, Count-1).
 
 
 send_cdrs(_Socket, _Address, _Version, 0) ->
