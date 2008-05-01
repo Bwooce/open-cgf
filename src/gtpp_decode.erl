@@ -182,9 +182,16 @@ decode_ie_data_record_packet(<<252:8,
 			      Rec_format:2/binary,
 			      Rest/binary>>, _TotalLen) ->
     _Decoded_rec_format = decode_ie_data_record_format_version(Rec_format), %% Not going to do anything special with it right now.
+    decode_cdrs(Len, Num_records, Rest);
+
+decode_ie_data_record_packet(<<252:8, 
+			      Len:16, 
+			      Num_records:8,
+			      1:8, %% only ASN.1 BER (!) encoded as decimal. ONE OF THESE IS A BUG...encode uses $1
+			      Rec_format:2/binary,
+			      Rest/binary>>, _TotalLen) ->
+    _Decoded_rec_format = decode_ie_data_record_format_version(Rec_format), %% Not going to do anything special with it right now.
     decode_cdrs(Len, Num_records, Rest).
-
-
 
 decode_ie_sequence_numbers(<< >>, _Len, List) ->
     {{sequence_numbers, List}, << >>};
