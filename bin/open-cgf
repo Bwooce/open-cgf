@@ -68,7 +68,7 @@ trace="${trace} ${traceoutput}"
 
 [ "$run_erl" = "eval" ] && [ -z "$daemon" ] && [ -z "$interactive" ] && help
 
-XEC="${daemon} ${heart} -pa ${basedir}/ebin -s 'open-cgf' "
+XEC="${daemon} ${heart} +W w -pa ${basedir}/ebin -s 'open-cgf' "
 
 if [ -z "$heart" ] || [ -z "$daemon" ]; then
     HEART_COMMAND="";

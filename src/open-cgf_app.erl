@@ -42,6 +42,7 @@
 %% top supervisor of the tree.
 %%--------------------------------------------------------------------
 start(_Type, StartArgs) ->
+    'open-cgf_logger':add_handler(),
     case 'open-cgf_sup':start_link(StartArgs) of
 	{ok, Pid} -> 
 	    {ok, Pid};

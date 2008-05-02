@@ -49,7 +49,7 @@ start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
 confirm(Address, SeqNums, Cause) ->
-    error_logger:info_msg("Reponding to sequence numbers ~p with cause ~p",[SeqNums, Cause]),
+    'open-cgf_logger':debug("Reponding to sequence numbers ~p with cause ~p",[SeqNums, Cause]),
     gen_server:call(?SERVER, {confirm, Address, SeqNums, Cause}).
 
 %%====================================================================
@@ -123,7 +123,7 @@ handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
 	        version_not_supported ->
                     {noreply, State#state{version=Header#gtpp_header.version}};
 		data_record_transfer_request ->
-		    {{Type, Content}, _} = Message,
+		    {{Type, _Content}, _} = Message,
 		    case Type of 
 			send_data_record_packet ->
 			    cdr_file_srv:log({udp, InIP, InPort}, Header#gtpp_header.seqnum, Message),
@@ -177,13 +177,13 @@ handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
 			    {noreply, State#state{known_sources=orddict:store({udp, InIP, InPort}, NewCount, State#state.known_sources)}}
 		    end
 	    end;
-	{error, Reason} ->
+	{error, _Reason} ->
 	    %% Send back error of some kind TODO
 	    {noreply, State}
     end;
 
 handle_info(Info, State) ->
-    error_logger:warn_msg("Got unhandled info ~p while in state ~p",[Info, State]),
+    error_logger:warning_msg("Got unhandled info ~p while in state ~p",[Info, State]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------

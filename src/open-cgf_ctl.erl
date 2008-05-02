@@ -100,7 +100,7 @@ handle_cast(_Msg, State) ->
 %% Description: Handling all non call/cast messages
 %%--------------------------------------------------------------------
 handle_info({udp, _Socket, _IP, _InPortNo, "stop"}, State) ->
-    error_logger:info_msg("stop command received: open-cgf stopping"),
+    error_logger:info_report("stop command received: open-cgf stopping"),
     init:stop(),
     {noreply, State};
 handle_info(_Info, State) ->

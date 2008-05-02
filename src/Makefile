@@ -2,6 +2,7 @@ ERL=$(shell which erl)
 ERLC=$(shell which erlc)
 
 EMULATOR=beam
+
 ifdef debug
   ERLC_FLAGS+=-Ddebug
 endif
@@ -30,7 +31,8 @@ else
 DEBUG_FLAGS =
 endif
 
-MODULES=test_udp_client open-cgf open-cgf_app open-cgf_sup cdr_file_srv gtpp_decode gtpp_encode open-cgf_state gtpp_udp_server open-cgf_ctl
+MODULES=test_udp_client open-cgf open-cgf_app open-cgf_sup cdr_file_srv gtpp_decode gtpp_encode open-cgf_state gtpp_udp_server open-cgf_ctl open-cgf_logger
+
 # gtpp_tcp_server gtpp_tcp_connection 
 
 

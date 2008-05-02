@@ -72,7 +72,7 @@ init([]) ->
 		    _ -> []
 		end,
     % max 10 restarts in the last 30s
-    {ok,{{one_for_all,10,30}, [CTLServer, CDRFileServer, CGFState, UDPServer] ++ TCPServer}}.
+    {ok,{{one_for_one,10,30}, [CTLServer, CDRFileServer, CGFState, UDPServer] ++ TCPServer}}.
 
 %%====================================================================
 %% Internal functions
