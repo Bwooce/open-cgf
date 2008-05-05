@@ -118,6 +118,7 @@ handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
     ?PRINTDEBUG2("Got Message ~p from ~p:~p", [Packet, InIP, InPort]),
     %% decode the header, {InIP, Port, SeqNum} forms a unique tuple. I think. How ugly.
     case gtpp_decode:decode_message(Packet) of
+     %% {ok,{{gtpp_header,0,0,1,echo_response,2,1},{{count,7},<<>>}}}
 	{ok, {Header, Message}} ->
 	    case Header#gtpp_header.msg_type of
 	        version_not_supported ->
@@ -149,6 +150,9 @@ handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
 			    send_data_record_transfer_response(InSocket, State#state.version, Header#gtpp_header.seqnum,
 							       {InIP, InPort}, 
 							       request_accepted, [Header#gtpp_header.seqnum]),
+			    {noreply, State};
+			Other ->
+	                    error_logger:error_msg("Ignored data transfer request with invalid content ~p",[Other]),
 			    {noreply, State}
 		    end;
 		node_alive_request ->
@@ -195,7 +199,8 @@ handle_info(Info, State) ->
 %%--------------------------------------------------------------------
 terminate(Reason, State) ->
     error_logger:info_msg("Closing open-cgf udp server for reason ~p. Sending redirection requests to all known CDFs", [Reason]),
-    lists:foreach(fun({udp, DestIP, DestPort}) ->
+    lists:foreach(fun({{udp, DestIP, DestPort}, _Count}) ->
+			  error_logger:info_msg("Sending redirection to CDF ~s:~p", [inet_parse:ntoa(DestIP), DestPort]), 
 			  send_redirection_request(State#state.socket, State#state.version, {DestIP, DestPort}, State#state.altCGF)
 		  end, orddict:to_list(State#state.known_sources)),
     ok.

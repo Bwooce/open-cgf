@@ -25,7 +25,7 @@
 
 
 %% API
--export([decode_message/1]).
+-export([decode_message/1, test/0, test2/0]).
 
 -include("open-cgf.hrl").
 -include("gtp.hrl").
@@ -76,7 +76,8 @@ decode_message(Bin) ->
 	echo_request -> 
 	    {ok, {Header, {none, Rest}}};
 	echo_response ->
-	    {ok, {Header, {decode_ie(Rest, Header#gtpp_header.msg_len), Rest}}};
+	    {Decode, Rest2} = decode_ie(Rest, Header#gtpp_header.msg_len),
+	    {ok, {Header, {Decode, Rest2}}};
 	version_not_supported ->
 	    {ok, {Header, {none, Rest}}};
 	node_alive_request ->
@@ -85,9 +86,11 @@ decode_message(Bin) ->
 	node_alive_response ->
 	    {ok, {Header, {none, Rest}}};
 	redirection_request ->
-	    {ok, {Header, {decode_ie(Rest, Header#gtpp_header.msg_len), Rest}}}; %% TODO, cope with addresses not just cause
+	    {Decode, Rest2} = decode_ie(Rest, Header#gtpp_header.msg_len),
+	    {ok, {Header, {Decode, Rest2}}}; %% TODO, cope with addresses not just cause
 	redirection_response ->
-	    {ok, {Header, {decode_ie(Rest, Header#gtpp_header.msg_len), Rest}}};
+	    {Decode, Rest2} = decode_ie(Rest, Header#gtpp_header.msg_len),
+	    {ok, {Header, {Decode, Rest2}}};
 	data_record_transfer_request ->
 	    MSG = decode_ie(Rest, Header#gtpp_header.msg_len),
 	    {ok, {Header, MSG}};
@@ -160,19 +163,25 @@ decode_ie(<<254:8, 16:8, Address:16, Rest/binary>>, _Len) ->
 
 decode_ie(<<249:8, Len:16, SeqNum:16, Rest/binary>>, _Len) ->
     decode_ie_sequence_numbers(Rest, Len, [SeqNum]);
+
 decode_ie(<<250:8, Len:16, SeqNum:16, Rest/binary>>, _Len) ->
     decode_ie_sequence_numbers(Rest, Len, [SeqNum]);
 decode_ie(<<253:8, Len:16, SeqNum:16, Rest/binary>>, _Len) ->
     decode_ie_sequence_numbers(Rest, Len, [SeqNum]);
 
+decode_ie(<<252:8, Rest/binary>>, Len) -> %% pre  R99 GTP' CDR transfer
+    {DRPs, Rest2} = decode_ie_data_record_packet(<<252:8, Rest/binary>>, Len),
+    {{send_data_record_packet, DRPs}, Rest2};    
+
 decode_ie(<<Other:8, Rest/binary>>, Len) when Other > 127 ->
-    Bits = 8*(Len-1),
-    <<Content:Bits, Rest2/binary>> = Rest,
-    {{private_extension, Content}, Rest2};
-decode_ie(<<_Other:8, Length:16, Rest/binary>>, _Len) ->
-    Bits =8*Length,
-    <<Content:Bits, Rest2>> = Rest,
-    {{private_extension, Length, Content}, Rest2}.
+    ?PRINTDEBUG2("Got private_extension (>127) type ~p of length ~p",[Other, Len]),
+    Bytes = Len-1,
+    <<Content:Bytes/binary, Rest2/binary>> = Rest,
+    {{private_extension, Other, Bytes, Content}, Rest2};
+decode_ie(<<Other:8, Length:16, Rest/binary>>, _Len) ->
+    ?PRINTDEBUG2("Got private_extension type ~p of length ~p",[Other, Length]),
+    <<Content:Length/binary, Rest2>> = Rest,
+    {{private_extension, Other, Length, Content}, Rest2}.
 
 
 decode_ie_data_record_packet(<<252:8, 
@@ -223,3 +232,57 @@ decode_cdrs(Total_len, Num_records, <<Rec_len:16, Rest/binary>>, Acc) ->
     
 	   
 	    
+test() -> 
+  Msg = <<15,240,2,229,0,0,252,2,226,2,1,21,7,1,244,181,
+                              130,1,240,128,1,19,131,7,53,0,114,82,134,8,241,
+                              164,6,128,4,166,179,11,40,133,3,77,7,212,166,
+                              130,0,6,128,4,10,207,35,181,135,8,105,110,116,
+                              101,114,110,101,116,136,2,1,33,169,8,160,6,128,
+                              4,166,179,10,68,139,1,1,172,130,0,40,48,130,0,
+                              36,130,12,1,9,17,1,41,1,1,1,17,5,1,1,131,2,10,
+                              120,132,2,30,240,133,1,2,134,9,8,5,1,1,82,71,43,
+                              0,0,141,9,8,5,1,1,73,70,43,0,0,142,2,0,181,143,
+                              1,20,146,15,77,79,68,95,85,77,84,83,95,71,71,83,
+                              78,48,56,179,48,48,22,6,12,43,6,1,4,1,9,10,48,1,
+                              2,2,98,129,1,0,162,3,2,1,39,48,22,6,12,43,6,1,4,
+                              1,9,10,48,1,2,2,99,129,1,0,162,3,2,1,58,148,4,1,
+                              51,158,18,149,1,0,150,6,145,114,82,134,8,241,
+                              151,2,11,0,152,1,1,158,1,1,159,32,8,0,17,33,34,
+                              0,33,0,4,191,127,130,1,6,48,130,0,89,129,1,1,
+                              130,2,49,49,131,2,7,209,132,1,1,133,9,8,5,1,1,
+                              73,71,43,0,0,134,9,8,5,1,1,73,86,43,0,0,135,1,9,
+                              136,4,0,0,32,0,137,12,1,9,17,1,41,1,1,1,17,5,1,
+                              1,170,6,128,4,10,207,35,181,140,2,10,120,141,2,
+                              30,240,142,9,8,5,1,1,73,86,43,0,0,143,1,1,48,
+                              130,0,73,129,1,1,130,2,49,49,131,2,7,209,132,1,
+                              2,133,9,0,1,1,0,0,0,43,0,0,134,9,0,1,1,0,0,0,43,
+                              0,0,135,1,1,136,4,0,0,0,16,170,6,128,4,10,207,
+                              35,181,140,1,0,141,1,0,142,9,8,5,1,1,73,86,43,0,
+                              0,143,1,1,48,130,0,88,129,2,3,232,130,2,49,49,
+                              131,2,7,209,132,1,1,133,9,0,1,1,0,0,0,43,0,0,
+                              134,9,0,1,1,0,0,0,43,0,0,135,1,0,136,4,0,0,2,0,
+                              137,12,1,9,17,1,41,1,1,1,17,5,1,1,170,6,128,4,
+                              10,207,35,181,140,1,0,141,1,0,142,9,0,1,1,0,0,0,
+                              43,0,0,143,1,1,0,230,181,130,0,226,128,1,19,131,
+                              7,53,0,114,82,134,8,241,164,6,128,4,166,179,11,
+                              40,133,3,77,7,213,166,130,0,6,128,4,10,207,35,
+                              181,135,8,105,110,116,101,114,110,101,116,136,2,
+                              1,33,169,8,160,6,128,4,166,179,10,68,139,1,1,
+                              172,130,0,38,48,130,0,34,130,12,1,9,17,1,41,1,1,
+                              1,17,5,1,1,131,1,0,132,1,0,133,1,2,134,9,8,5,1,
+                              1,83,1,43,0,0,141,9,8,5,1,1,83,0,43,0,0,142,1,1,
+                              143,1,0,146,15,77,79,68,95,85,77,84,83,95,71,71,
+                              83,78,48,56,179,48,48,22,6,12,43,6,1,4,1,9,10,
+                              48,1,2,2,98,129,1,0,162,3,2,1,0,48,22,6,12,43,6,
+                              1,4,1,9,10,48,1,2,2,99,129,1,0,162,3,2,1,0,148,
+                              4,1,51,158,19,149,1,0,150,6,145,114,82,134,8,
+                              241,151,2,11,0,152,1,1,158,1,1,159,32,8,0,17,33,
+                              34,0,33,0,4>>,
+	D = decode_message(Msg),
+	io:format("~p~n",[D]).
+
+test2() ->
+	Msg = <<15,2,0,2,0,1,14,7>>,
+	D = decode_message(Msg),
+        io:format("~p~n",[D]).
+
