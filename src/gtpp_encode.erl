@@ -194,12 +194,10 @@ data_record_transfer_response(Version, SeqNum, Cause, RequestsResponded, Extensi
     ?PRINTDEBUG2("data_record_transfer_response/5 ~p ~p",[SeqNum, RequestsResponded]),
     C = cause(Cause),
     R = requests_responded(RequestsResponded),
-    B = <<C:8, R/binary, Extensions/binary>>,
+    B = <<1:8, C:8, R/binary, Extensions/binary>>,
     H = header(#gtpp_header{version=Version, pt=0, modern_header=1, msg_type=msg_type(data_record_transfer_response), 
 			    msg_len=size(B), seqnum=SeqNum}),
     <<H/binary, B/binary>>.
-
-  
 
 
 requests_responded(List) ->

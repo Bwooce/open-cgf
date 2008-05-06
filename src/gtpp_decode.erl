@@ -95,8 +95,9 @@ decode_message(Bin) ->
 	    MSG = decode_ie(Rest, Header#gtpp_header.msg_len),
 	    {ok, {Header, MSG}};
 	data_record_transfer_response ->
-	    MSG = decode_ie(Rest, Header#gtpp_header.msg_len),
-	    {ok, {Header, MSG}};
+	    {Cause, Rest2} = decode_ie(Rest, Header#gtpp_header.msg_len),
+	    {Response, Rest3} = decode_ie(Rest2, Header#gtpp_header.msg_len-2),
+	    {ok, {Header, {Cause, Response, Rest3}}};
 	invalid_msg_type ->
 	    %% as per unknown
 	    {error, invalid_msg_type}
@@ -123,7 +124,9 @@ decode_msg_type(_) -> invalid_msg_type. %% not valid for GTP' at least.
 
 %% cause decode - could decode further in future...
 decode_ie(<<1:8, Value:8, Rest/binary>>, _Len) ->
-    <<Response_Reject_ind:2, _:6>> = Value,
+    ?PRINTDEBUG2("Decoding cause ~p", [Value]),
+    <<Response_Reject_ind:2, _:6>> = <<Value:8>>,
+    ?PRINTDEBUG("Decoded indicators"),
     case Response_Reject_ind of 
 	0 -> {{cause, request, Value}, Rest};
 	1 -> {{cause, reject, Value}, Rest}; %% unknown, treat as reject as per 29.060 ss 7.7.1

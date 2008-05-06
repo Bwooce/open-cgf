@@ -247,3 +247,4 @@ send_redirection_request(Socket, Version, {DestIP, DestPort}, AltCGF) ->
 		gtpp_encode:redirection_request(Version, SeqNum, node_about_to_go_down, AltCGF, << >>)
 	end,
     ok = gen_udp:send(Socket, DestIP, DestPort, R).
+
