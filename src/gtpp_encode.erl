@@ -131,20 +131,20 @@ node_alive_response(Version, SeqNum, Extensions) ->
 redirection_request(Version, SeqNum, Cause, Extensions)->
     ?PRINTDEBUG("redirection_request/4"),
     C = cause(Cause),
-    B = <<C:8, Extensions/binary>>,
+    B = <<1:8, C:8, Extensions/binary>>,
     redirection_request2(Version, SeqNum, B).
 redirection_request(Version, SeqNum, Cause, NodeAddress, Extensions) ->
     ?PRINTDEBUG("redirection_request/5"),
     C = cause(Cause),
     NA = recommended_node_address(NodeAddress),
-    B = <<C:8, NA/binary, Extensions/binary>>,
+    B = <<1:8, C:8, NA/binary, Extensions/binary>>,
     redirection_request2(Version, SeqNum, B).
 redirection_request(Version, SeqNum, Cause, NodeAddress, AltNodeAddress, Extensions) ->
     ?PRINTDEBUG("redirection_request/6"),
     C = cause(Cause),
     NA = recommended_node_address(NodeAddress),
     ANA = recommended_node_address(AltNodeAddress),
-    B = <<C:8, NA/binary, ANA/binary, Extensions/binary>>,
+    B = <<1:8, C:8, NA/binary, ANA/binary, Extensions/binary>>,
     redirection_request2(Version, SeqNum, B).
 
 redirection_request2(Version, SeqNum, B) ->
@@ -158,7 +158,7 @@ redirection_response(Version, SeqNum) ->
 redirection_response(Version, SeqNum, Cause, Extensions)->    
     ?PRINTDEBUG("redirection_response/4"),
     C = cause(Cause),
-    B = <<C:8, Extensions/binary>>,
+    B = <<1:8, C:8, Extensions/binary>>,
     H = header(#gtpp_header{version=Version, pt=0, modern_header=1, msg_type=msg_type(redirection_response), 
 			    msg_len=size(B), seqnum=SeqNum}),
     <<H/binary, B/binary>>.
