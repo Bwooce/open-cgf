@@ -76,32 +76,32 @@ decode_message(Bin) ->
 	echo_request -> 
 	    {ok, {Header, {none, Rest}}};
 	echo_response ->
-	    {Decode, Rest2} = decode_ie(Rest, Header#gtpp_header.msg_len),
+	    {Decode, Rest2} = decode_ies(Rest, Header#gtpp_header.msg_len),
 	    {ok, {Header, {Decode, Rest2}}};
 	version_not_supported ->
 	    {ok, {Header, {none, Rest}}};
 	node_alive_request ->
-	    {Address, Rest2} = decode_ie(Rest,  Header#gtpp_header.msg_len), %% TODO, cope with alternate node address
-	    {ok, {Header, {Address, Rest2}}};
+	    {Response, Rest2} = decode_ies(Rest,  Header#gtpp_header.msg_len), %% TODO, cope with alternate node address
+	    {ok, {Header, {Response, Rest2}}};
 	node_alive_response ->
 	    {ok, {Header, {none, Rest}}};
 	redirection_request ->
-	    {Decode, Rest2} = decode_ie(Rest, Header#gtpp_header.msg_len),
+	    {Decode, Rest2} = decode_ies(Rest, Header#gtpp_header.msg_len),
 	    {ok, {Header, {Decode, Rest2}}}; %% TODO, cope with addresses not just cause
 	redirection_response ->
-	    {Decode, Rest2} = decode_ie(Rest, Header#gtpp_header.msg_len),
+	    {Decode, Rest2} = decode_ies(Rest, Header#gtpp_header.msg_len),
 	    {ok, {Header, {Decode, Rest2}}};
 	data_record_transfer_request ->
-	    MSG = decode_ie(Rest, Header#gtpp_header.msg_len),
-	    {ok, {Header, MSG}};
+	    Response = decode_ies(Rest, Header#gtpp_header.msg_len),
+	    {ok, {Header, Response}};
 	data_record_transfer_response ->
-	    {Cause, Rest2} = decode_ie(Rest, Header#gtpp_header.msg_len),
-	    {Response, Rest3} = decode_ie(Rest2, Header#gtpp_header.msg_len-2),
-	    {ok, {Header, {Cause, Response, Rest3}}};
+	    {Response, Rest2} = decode_ies(Rest, Header#gtpp_header.msg_len),
+%%	    {Response, Rest3} = decode_ie(Rest2, Header#gtpp_header.msg_len-2),
+	    {ok, {Header, {Response, Rest2}}};
 	invalid_msg_type ->
 	    %% as per unknown
 	    {error, invalid_msg_type}
-    end.
+    end. 
 
 
 
@@ -121,6 +121,19 @@ decode_msg_type(240) -> data_record_transfer_request;
 decode_msg_type(241) -> data_record_transfer_response;
 decode_msg_type(_) -> invalid_msg_type. %% not valid for GTP' at least.
     
+%% TODO - decide if gtpp_decode should really return a tuple (implying order) 
+%% or a tagged list considering we're decoding in any order.
+decode_ies(Bin, Len) ->
+    decode_ies2(Bin, Len, {}).
+decode_ies2(<< >>, _, Acc) ->
+    ?PRINTDEBUG2("Finished processing IEs, Acc is ~p",[Acc]),
+    erlang:append_element(Acc, << >>);
+decode_ies2(Rest, 0, Acc) ->
+    ?PRINTDEBUG2("Finished processing IEs (len remain=0), Acc is ~p, Bin=~p",[Acc,Rest]),
+    erlang:append_element(Acc, Rest);
+decode_ies2(Bin, Len, Acc) ->
+    {Decode, Rest} = decode_ie(Bin, Len),
+    decode_ies2(Rest, size(Rest), erlang:append_element(Acc, Decode)).
 
 %% cause decode - could decode further in future...
 decode_ie(<<1:8, Value:8, Rest/binary>>, _Len) ->

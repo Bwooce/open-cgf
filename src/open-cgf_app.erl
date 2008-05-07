@@ -42,7 +42,12 @@
 %% top supervisor of the tree.
 %%--------------------------------------------------------------------
 start(_Type, StartArgs) ->
-    'open-cgf_logger':add_handler(),
+    case application:get_env('open-cgf', syslog) of
+	{ok, none} -> error_logger:info_msg("Syslogging disabled");
+	undefined -> error_logger:info_msg("'syslog' parameter not found. Syslogging disabled");
+	{ok, {IP, Port}} ->
+	    'open-cgf_logger':add_handler(syslog, {IP, Port})
+    end,
     case 'open-cgf_sup':start_link(StartArgs) of
 	{ok, Pid} -> 
 	    {ok, Pid};

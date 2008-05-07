@@ -47,7 +47,8 @@
 		cdr_temp_dir,
 	        file_record_limit,
 		file_age_limit_seconds,
-		possible_duplicate_limit_seconds
+		possible_duplicate_limit_seconds,
+		post_close_command
 	       }).
 
 -record(source, {address, %% {IP,Port} of sending CDF
@@ -110,6 +111,11 @@ init([]) ->
     {ok, CDR_file_record_limit} = application:get_env('open-cgf', cdr_file_record_limit),
     {ok, CDR_file_age_limit} = application:get_env('open-cgf', cdr_file_age_limit_seconds),
     {ok, CDR_duplicate_limit} = application:get_env('open-cgf', cdr_possible_duplicate_limit_seconds), 
+    CDR_close_command = case application:get_env('open-cgf', cdr_post_close_command) of
+			    {ok, none} -> none;
+			    undefined -> none;
+			    {ok, CMD} -> CMD
+			end,
     %% set the callback timer to close files after time limit is up
     I1 = trunc((CDR_file_age_limit*1000)/2),
     {ok, _} = timer:send_interval(I1, {flush_pending_tick}),
@@ -118,7 +124,8 @@ init([]) ->
     process_flag(trap_exit, true),
     {ok, #state{known_sources=[], cdr_dir=CDR_dir, cdr_temp_dir=CDR_temp_dir,
 	        file_record_limit=CDR_file_record_limit, file_age_limit_seconds=CDR_file_age_limit,
-	        possible_duplicate_limit_seconds = CDR_duplicate_limit}}.
+	        possible_duplicate_limit_seconds = CDR_duplicate_limit,
+	        post_close_command=CDR_close_command}}.
 
 %%--------------------------------------------------------------------
 %% Function: %% handle_call(Request, From, State) -> {reply, Reply, State} |
@@ -299,6 +306,7 @@ handle_info(Info, State) ->
 %% The return value is ignored.
 %%--------------------------------------------------------------------
 terminate(_Reason, State) ->
+    ?PRINTDEBUG("cdr_file_srv terminating, writing pending"),
     lists:foreach(fun(S) ->
 			  log_cdr(S, State),
 			  log_duplicate_cdr(S, State)
@@ -384,8 +392,17 @@ check_pending_buffer(TS, S, State) when S#source.cdr_writer_pid == none, S#sourc
 	    ?PRINTDEBUG("No pending buffers to write"),
 	    State#state{known_sources=keystore(S#source.address, 2, State#state.known_sources, S)}
     end;
-check_pending_buffer(_,_,State) ->
+check_pending_buffer(_,S,State) when not S#source.cdr_writer_pid == none ->
     ?PRINTDEBUG("check_pending_buffer - busy writing buffer already or no records to write"),
+    case is_process_alive(S#source.cdr_writer_pid) of  %% belts and braces check. Could cause infinite cycling...
+	false ->
+	    error_logger:error_msg("CDR writer died unexpectedly. resetting"),
+	    NewS = S#source{cdr_writer_pid = none},
+	    State#state{known_sources=keystore(S#source.address, 2, State#state.known_sources, NewS)};
+	_ -> State
+    end;
+check_pending_buffer(_,_,State) ->
+    ?PRINTDEBUG("check_pending_buffer - no records to write"),
     State.
 
 check_duplicate_buffer(TS, S, State) when S#source.cdr_writer_pid == none ->
@@ -398,8 +415,17 @@ check_duplicate_buffer(TS, S, State) when S#source.cdr_writer_pid == none ->
        true ->
 	    State#state{known_sources=keystore(S#source.address, 2, State#state.known_sources, S)}
     end;
-check_duplicate_buffer(_,_,State) ->
+check_duplicate_buffer(_,S,State) when not S#source.cdr_writer_pid == none ->
     ?PRINTDEBUG("check_duplicate_buffer state - busy writing buffer already"),
+    case is_process_alive(S#source.cdr_writer_pid) of  %% belts and braces check. Could cause infinite cycling...
+	false ->
+	    error_logger:error_msg("CDR writer died unexpectedly. resetting"),
+	    NewS = S#source{cdr_writer_pid = none},
+	    State#state{known_sources=keystore(S#source.address, 2, State#state.known_sources, NewS)};
+	_ -> State
+    end;
+check_duplicate_buffer(_,_,State) ->
+   ?PRINTDEBUG("check_duplicate_buffer state - no records to write"),
     State.
 
 get_source(SourceKey, State) ->
@@ -421,7 +447,12 @@ log_cdr(S, State) ->
     Temp_filename = build_filename(S#source.address, Now, State#state.cdr_temp_dir, ""),
     Final_filename = build_filename(S#source.address, Now, State#state.cdr_dir, ""), 
     SeqNums = write_cdrs(S#source.pending_write_list, Temp_filename, Final_filename),
-    cdr_file_srv:flush_pending(S#source.address,SeqNums).
+    cdr_file_srv:flush_pending(S#source.address,SeqNums),
+    case SeqNums of
+	[] -> ok;
+	_ -> execute_post_close_command(State#state.post_close_command, Final_filename)
+    end.
+
 
 
 log_duplicate_cdr(S, State) ->
@@ -430,8 +461,11 @@ log_duplicate_cdr(S, State) ->
     Temp_filename = build_filename(S#source.address, Now, State#state.cdr_temp_dir, ".possible_duplicate"),
     Final_filename = build_filename(S#source.address, Now, State#state.cdr_dir, ".possible_duplicate"), 
     SeqNums = write_cdrs(S#source.possible_duplicate_list, Temp_filename, Final_filename),
-    cdr_file_srv:flush_pending_duplicates(S#source.address,SeqNums).
-
+    cdr_file_srv:flush_pending_duplicates(S#source.address,SeqNums),
+    case SeqNums of
+	[] -> ok;
+	_ ->  execute_post_close_command(State#state.post_close_command, Final_filename)
+    end.
 
 build_filename(Address, Now, Dir, Suffix) ->
     {{YY,MMM,DD},{HH,MM,SS}} = calendar:now_to_universal_time(Now),
@@ -554,4 +588,17 @@ keystore(K, N, L, New) ->
     NewList = lists:keydelete(K,N,L),
     [New|NewList].
 
-
+execute_post_close_command(none, Filename) ->
+    'open-cgf_logger':debug("no cdr_post_close_command for file ~s; skipping",[Filename]),
+    ok;
+execute_post_close_command(Command, Filename) ->
+    Cmd = Command ++ " " ++ "\"" ++ Filename ++ "\"",
+    try os:cmd(Cmd) of
+	Result ->
+	    'open-cgf_logger':debug("cdr_post_close_command ~s completed with result ~s",[Cmd, Result]),
+	    ok
+    catch
+	exit: X ->
+	    error_logger:error_msg("cdr_post_close command failed: command ~s, error ~p",[Cmd,X])
+    end.
+		       

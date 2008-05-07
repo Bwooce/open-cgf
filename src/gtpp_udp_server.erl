@@ -50,7 +50,8 @@ start_link() ->
 
 confirm(Address, SeqNums, Cause) ->
     'open-cgf_logger':debug("Reponding to sequence numbers ~p with cause ~p",[SeqNums, Cause]),
-    gen_server:call(?SERVER, {confirm, Address, SeqNums, Cause}).
+    %% 15s chosen arbitrarily. 5s timed out on 10K instant messages w/full debug.
+    gen_server:call(?SERVER, {confirm, Address, SeqNums, Cause}, 15*1000). 
 
 %%====================================================================
 %% gen_server callbacks
@@ -64,10 +65,10 @@ confirm(Address, SeqNums, Cause) ->
 %% Description: Initiates the server
 %%--------------------------------------------------------------------
 init([]) ->
-    'open-cgf_state':inc_restart_counter(), %% both TCP and UDP servers do this so if either restarts it is noticable
+    RSCounter = 'open-cgf_state':inc_restart_counter(), %% both TCP and UDP servers do this so if either restarts it is noticable
     {ok, {IP,Port}} = application:get_env('open-cgf', listen),
     {ok, Socket} = gen_udp:open(Port, [binary,{ip, IP},{recbuf, 300000}]),
-    error_logger:info_msg("open-cgf listening on ~p:~p UDP~n",[IP, Port]),
+    error_logger:info_msg("open-cgf listening on ~p:~p UDP - session counter ~p~n",[inet_parse:ntoa(IP), Port, RSCounter]),
     {ok, CDFs} = application:get_env('open-cgf', cdf_list),
     {ok, Version} = application:get_env('open-cgf', gtpp_version),
     {ok, AltCGF} = application:get_env('open-cgf', peer_cgf),
@@ -198,11 +199,16 @@ handle_info(Info, State) ->
 %% The return value is ignored.
 %%--------------------------------------------------------------------
 terminate(Reason, State) ->
-    error_logger:info_msg("Closing open-cgf udp server for reason ~p. Sending redirection requests to all known CDFs", [Reason]),
+    error_logger:info_msg("Closing open-cgf udp server for reason: \"~p\". Sending redirection requests to all known CDFs~n", [Reason]),
+    case Reason of
+	normal ->     timer:sleep(1000); %% give cdr_file_srv a second to catch up, if required. TODO improve this to be synchronised
+	_ -> ok %% no time to bugger around
+    end,
     lists:foreach(fun({{udp, DestIP, DestPort}, _Count}) ->
 			  error_logger:info_msg("Sending redirection to CDF ~s:~p", [inet_parse:ntoa(DestIP), DestPort]), 
 			  send_redirection_request(State#state.socket, State#state.version, {DestIP, DestPort}, State#state.altCGF)
 		  end, orddict:to_list(State#state.known_sources)),
+    error_logger:info_msg("~nopen-cgf exiting~n~n"),
     ok.
 
 %%--------------------------------------------------------------------

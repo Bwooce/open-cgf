@@ -5,6 +5,8 @@
 
 -behaviour(gen_event).
 
+-include("open-cgf.hrl").
+
 %% External exports
 -export([add_handler/0,add_handler/1,add_handler/2,error/1,error/2,
          warning/1, warning/2, info/1,info/2, debug/1, debug/2, log/3,log/5]).
@@ -32,7 +34,7 @@
 
 add_handler()          -> add_handler(syslog).
 add_handler(Type)      -> error_logger:add_report_handler(?MODULE,[Type]).
-add_handler(Type,Host) -> error_logger:add_report_handler(?MODULE,[Type,Host]).
+add_handler(Type,IPPort) -> error_logger:add_report_handler(?MODULE,[Type,IPPort]).
 
 %% A couple of examples:
 %%  error("no response from front-end~n").
@@ -49,8 +51,12 @@ warning(Msg, Args) -> log(warning(), Msg, Args).
 info(Msg)      -> log(info(),Msg,[]).
 info(Msg,Args) -> log(info(),Msg,Args).
 
-debug(Msg)       -> log(debug(), Msg, []).
-debug(Msg, Args) -> log(debug(), Msg, Args).
+debug(Msg)       -> 
+    ?PRINTDEBUG(Msg),
+    log(debug(), Msg, []).
+debug(Msg, Args) -> 
+    ?PRINTDEBUG2(Msg, Args),
+    log(debug(), Msg, Args).
     
 
 log(Level,Msg,Args) when integer(Level),list(Msg),list(Args) ->
@@ -108,18 +114,19 @@ ftp()      -> (11 bsl 3). % ftp daemon
 init([syslog]) ->
     S = init_syslog(local_host()),
     {ok,S};
-init([syslog,Host]) ->
-    S = init_syslog(Host),
+init([syslog,IPPort]) ->
+    S = init_syslog(IPPort),
     {ok,S};
 init(Other) ->
     io:fwrite("~w: <ERROR> No support for ~w , no handler is added !~n",
               [?MODULE,Other]),
     {error,not_supported}.
 
-init_syslog(Host) ->
+init_syslog({IP,Port}) ->
     {ok,Sock} = gen_udp:open(0),
     #state{sock=Sock,
-           host=Host}.
+           host=IP,
+	   port=Port}.
 
 
 %%----------------------------------------------------------------------
