@@ -551,7 +551,11 @@ flush_pending_timer(State) ->
 					  Final_filename = build_filename(S#source.address, Now, State#state.cdr_dir, ""), 
 					  SeqNums = write_cdrs(S#source.pending_write_list, Temp_filename, Final_filename),
 					  gen_server:cast(?SERVER, {flush_pending_from_timer,
-								    S#source.address, SeqNums});
+								    S#source.address, SeqNums}),
+					  case SeqNums of
+					      [] -> ok;
+					      _ -> execute_post_close_command(State#state.post_close_command, Final_filename)
+					  end;
 				  true ->
 					  ok
 				  end
@@ -572,7 +576,11 @@ flush_duplicates_timer(State) ->
 				  Temp_filename = build_filename(S#source.address, Now, State#state.cdr_temp_dir, ".possible_duplicate"),
 				  Final_filename = build_filename(S#source.address, Now, State#state.cdr_dir, ".possible_duplicate"), 
 				  SeqNums = write_cdrs(List, Temp_filename, Final_filename),
-				  gen_server:cast(?SERVER, {flush_pending_duplicates_from_timer, S#source.address, SeqNums})
+				  gen_server:cast(?SERVER, {flush_pending_duplicates_from_timer, S#source.address, SeqNums}),
+				  case SeqNums of
+				      [] -> ok;
+				      _ -> execute_post_close_command(State#state.post_close_command, Final_filename)
+				  end
 			  end
 		  end, State#state.known_sources).
     
