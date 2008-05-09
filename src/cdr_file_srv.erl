@@ -339,7 +339,7 @@ buffer_cdr(SourceKey, Seq_num, {{_,[]},_}, State) ->
     {ok, State#state{known_sources=KS}};
 
 buffer_cdr(SourceKey, Seq_num, Data, State) ->
-    ?PRINTDEBUG2("Buffering CDR for ~p, seqnum ~p",[SourceKey, Seq_num]),
+    ?PRINTDEBUG2("Buffering CDR for ~p, seqnum ~B",[SourceKey, Seq_num]),
     NewState = check_buffer(SourceKey, State),
     TS = greg_now(),
     S = get_source(SourceKey, NewState),
@@ -356,7 +356,7 @@ buffer_cdr(SourceKey, Seq_num, Data, State) ->
     {ok, NewState#state{known_sources=KS}}.
 
 buffer_duplicate_cdr(SourceKey, Seq_num, Data, State) ->
-    ?PRINTDEBUG2("Buffering possible duplicate CDR for ~p, seqnum ~p",[SourceKey, Seq_num]),
+    ?PRINTDEBUG2("Buffering possible duplicate CDR for ~p, seqnum ~B",[SourceKey, Seq_num]),
     NewState = check_buffer(SourceKey, State),
     TS = greg_now(),
     S = get_source(SourceKey, NewState),
@@ -489,7 +489,7 @@ write_cdrs(List, Temp_filename, Final_filename) ->
 write_cdr(F, List) ->
     write_cdr(F, List, []).
 write_cdr(_, [], SeqNums) ->
-    ?PRINTDEBUG2("Written SeqNums ~p",[SeqNums]),
+    ?PRINTDEBUG2("Written SeqNums ~s",['open-cgf_logger':format_seqnums(SeqNums)]),
     SeqNums;
 write_cdr(F, [{SeqNum, _, {{_,Data},_}}|Rest], SeqNums) ->
     ok = file:write(F, Data),

@@ -8,6 +8,7 @@
 -include("open-cgf.hrl").
 
 %% External exports
+-export([format_seqnums/1]).
 -export([add_handler/0,add_handler/1,add_handler/2,error/1,error/2,
          warning/1, warning/2, info/1,info/2, debug/1, debug/2, log/3,log/5]).
 -export([emergency/0,alert/0,critical/0,error/0,warning/0,
@@ -100,6 +101,15 @@ uucp()     -> (8 bsl 3) . % UUCP subsystem
 cron()     -> (9 bsl 3) . % clock daemon
 authpriv() -> (10 bsl 3). % security/authorization messages (private)
 ftp()      -> (11 bsl 3). % ftp daemon
+
+format_seqnums(SeqNums) ->
+    format_seqnums2(SeqNums, []).
+
+format_seqnums2([], Acc) ->
+    string:strip(lists:flatten(Acc), right, $,);
+format_seqnums2([SeqNum|Rest], Acc) ->
+    format_seqnums2(Rest, Acc ++ [io_lib:format("~B,",[SeqNum])]).
+
 
 
 %%%----------------------------------------------------------------------
