@@ -49,7 +49,7 @@ start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
 confirm(Address, SeqNums, Cause) ->
-    'open-cgf_logger':debug("Responding to sequence numbers ~s with cause ~p",[format_seqnums(SeqNums), Cause]),
+    'open-cgf_logger':debug("Responding to sequence numbers ~s with cause ~p",['open-cgf_logger':format_seqnums(SeqNums), Cause]),
     %% 15s chosen arbitrarily. 5s timed out on 10K instant messages w/full debug.
     gen_server:call(?SERVER, {confirm, Address, SeqNums, Cause}, 15*1000). 
 
@@ -253,12 +253,4 @@ send_redirection_request(Socket, Version, {DestIP, DestPort}, AltCGF) ->
 		gtpp_encode:redirection_request(Version, SeqNum, node_about_to_go_down, AltCGF, << >>)
 	end,
     ok = gen_udp:send(Socket, DestIP, DestPort, R).
-
-format_seqnums(SeqNums) ->
-    format_seqnums2(SeqNums, []).
-
-format_seqnums2([], Acc) ->
-    string:strip(lists:flatten(Acc), right, $,);
-format_seqnums2([SeqNum|Rest], Acc) ->
-    format_seqnums2(Rest, Acc ++ [io_lib:format("~B,",[SeqNum])]).
 
