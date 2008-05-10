@@ -42,9 +42,8 @@
 %% top supervisor of the tree.
 %%--------------------------------------------------------------------
 start(_Type, StartArgs) ->
-    case application:get_env('open-cgf', syslog) of
+    case 'open-cgf_config':get_item({'open-cgf', syslog}, ip_port_or_none, none) of 
 	{ok, none} -> error_logger:info_msg("Syslogging disabled");
-	undefined -> error_logger:info_msg("'syslog' parameter not found. Syslogging disabled");
 	{ok, {IP, Port}} ->
 	    'open-cgf_logger':add_handler(syslog, {IP, Port})
     end,

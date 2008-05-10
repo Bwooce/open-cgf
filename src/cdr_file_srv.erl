@@ -106,16 +106,12 @@ print_state() ->
 %% Description: Initiates the server
 %%--------------------------------------------------------------------
 init([]) ->
-    {ok, CDR_temp_dir} = application:get_env('open-cgf', cdr_temp_dir),
-    {ok, CDR_dir} = application:get_env('open-cgf', cdr_dir),
-    {ok, CDR_file_record_limit} = application:get_env('open-cgf', cdr_file_record_limit),
-    {ok, CDR_file_age_limit} = application:get_env('open-cgf', cdr_file_age_limit_seconds),
-    {ok, CDR_duplicate_limit} = application:get_env('open-cgf', cdr_possible_duplicate_limit_seconds), 
-    CDR_close_command = case application:get_env('open-cgf', cdr_post_close_command) of
-			    {ok, none} -> none;
-			    undefined -> none;
-			    {ok, CMD} -> CMD
-			end,
+    {ok, CDR_temp_dir} = 'open-cgf_config':get_item({'open-cgf', cdr_temp_dir}, none), %% crash if not defined. validation TODO
+    {ok, CDR_dir} = 'open-cgf_config':get_item({'open-cgf', cdr_dir}, none), %% crash if not defined. validation TODO
+    {ok, CDR_file_record_limit} = 'open-cgf_config':get_item({'open-cgf', cdr_file_record_limit}, {integer, 1, 10000}, 100),
+    {ok, CDR_file_age_limit} = 'open-cgf_config':get_item({'open-cgf', cdr_file_age_limit_seconds}, {integer, 1, 3600}, 60), 
+    {ok, CDR_duplicate_limit} = 'open-cgf_config':get_item({'open-cgf', cdr_possible_duplicate_limit_seconds}, {integer, 1, 3600}, 60), 
+    {ok, CDR_close_command} = 'open-cgf_config':get_item({'open-cgf', cdr_post_close_command}, none, none), %% validation TODO
     %% set the callback timer to close files after time limit is up
     I1 = trunc((CDR_file_age_limit*1000)/2),
     {ok, _} = timer:send_interval(I1, {flush_pending_tick}),
@@ -306,7 +302,7 @@ handle_info(Info, State) ->
 %% The return value is ignored.
 %%--------------------------------------------------------------------
 terminate(_Reason, State) ->
-    ?PRINTDEBUG("cdr_file_srv terminating, writing pending"),
+    ?PRINTDEBUG("cdr_file_srv terminating, writing any pending CDRs"),
     lists:foreach(fun(S) ->
 			  log_cdr(S, State),
 			  log_duplicate_cdr(S, State)

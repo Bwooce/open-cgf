@@ -49,7 +49,7 @@ start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
 confirm(Address, SeqNums, Cause) ->
-    'open-cgf_logger':debug("Responding to sequence numbers ~s with cause ~p",['open-cgf_logger':format_seqnums(SeqNums), Cause]),
+    'open-cgf_logger':debug("Responding to sequence numbers [~s] with cause ~p",['open-cgf_logger':format_seqnums(SeqNums), Cause]),
     %% 15s chosen arbitrarily. 5s timed out on 10K instant messages w/full debug.
     gen_server:call(?SERVER, {confirm, Address, SeqNums, Cause}, 15*1000). 
 
@@ -66,14 +66,15 @@ confirm(Address, SeqNums, Cause) ->
 %%--------------------------------------------------------------------
 init([]) ->
     RSCounter = 'open-cgf_state':inc_restart_counter(), %% both TCP and UDP servers do this so if either restarts it is noticable
-    {ok, {IP,Port}} = application:get_env('open-cgf', listen),
+    {ok, {IP,Port}} = 'open-cgf_config':get_item({'open-cgf', listen}, ip_port), %% error and crash if no match
     {ok, Socket} = gen_udp:open(Port, [binary,{ip, IP},{recbuf, 300000}]),
     error_logger:info_msg("open-cgf listening on ~p:~p UDP - session counter ~p~n",[inet_parse:ntoa(IP), Port, RSCounter]),
-    {ok, CDFs} = application:get_env('open-cgf', cdf_list),
-    {ok, Version} = application:get_env('open-cgf', gtpp_version),
-    {ok, AltCGF} = application:get_env('open-cgf', peer_cgf),
+    {ok, CDFs} = 'open-cgf_config':get_item({'open-cgf', cdf_list}, none, []), %% default to [] (none), validation is TODO
+    {ok, Version} = 'open-cgf_config':get_item({'open-cgf', gtpp_version}, {integer, 0, 2}, 2), %% default to 2, make people move into the future
+    {ok, AltCGF} = 'open-cgf_config':get_item({'open-cgf', peer_cgf}, none, none), %% default to none, validation is TODO
     lists:foreach(fun({DestIP, DestPort}) ->
-			  error_logger:info_msg("open-cgf sending echo request and node_alive request to ~p:~p~n",[DestIP, DestPort]),
+			  error_logger:info_msg("open-cgf sending echo request and node_alive request to ~s:~p~n",
+						[inet_parse:ntoa(DestIP), DestPort]),
 			  send_echo_request(Socket, Version, {DestIP,DestPort}),
 			  send_node_alive_request(Socket, Version, {DestIP, DestPort}, IP)
 		  end, CDFs),			  
@@ -116,7 +117,7 @@ handle_cast(_Msg, State) ->
 %% Description: Handling all non call/cast messages
 %%--------------------------------------------------------------------
 handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
-    ?PRINTDEBUG2("Got Message ~p from ~p:~p", [Packet, InIP, InPort]),
+    ?PRINTDEBUG2("Got Message ~p from ~s:~p", [Packet, inet_parse:ntoa(InIP), InPort]),
     %% decode the header, {InIP, Port, SeqNum} forms a unique tuple. I think. How ugly.
     case gtpp_decode:decode_message(Packet) of
      %% {ok,{{gtpp_header,0,0,1,echo_response,2,1},{{count,7},<<>>}}}
@@ -138,7 +139,7 @@ handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
 			    {noreply, State};
 			cancel_packets ->
 			    {{cancel_packets, {sequence_numbers, SeqNums}}, _} = Message,
-			    ?PRINTDEBUG2("Cancelling packets with seqnums ~p",[SeqNums]),
+			    ?PRINTDEBUG2("Cancelling packets with seqnums [~s]",['open-cgf_logger':format_seqnums(SeqNums)]),
 			    cdr_file_srv:remove_possible_dup({udp, InIP, InPort}, Header#gtpp_header.seqnum, SeqNums),
 			    send_data_record_transfer_response(InSocket, State#state.version, Header#gtpp_header.seqnum,
 							       {InIP, InPort}, 
@@ -146,7 +147,7 @@ handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
 			    {noreply, State};
 			release_packets ->
 			    {{release_packets, {sequence_numbers, SeqNums}}, _} = Message,
-			    ?PRINTDEBUG2("Releasing packets with seqnums ~p",[SeqNums]),
+			    ?PRINTDEBUG2("Releasing packets with seqnums [~s]",['open-cgf_logger':format_seqnums(SeqNums)]),
 			    cdr_file_srv:commit_possible_dup({udp, InIP, InPort}, Header#gtpp_header.seqnum, SeqNums),
 			    send_data_record_transfer_response(InSocket, State#state.version, Header#gtpp_header.seqnum,
 							       {InIP, InPort}, 
@@ -175,7 +176,8 @@ handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
 			    {noreply, State}; %% endpoint is known and has not restarted
 			{ok, _} ->
 			    %% endpoint is known and has restarted. Sound the klaxxon.
-			    error_logger:warning_msg("CDF ~p:~p has restarted, saving pending CDRs and resetting sequencing",[InIP,InPort]),
+			    error_logger:warning_msg("CDF ~s:~p has restarted, saving pending CDRs and resetting sequencing",
+						     [inet_parse:ntoa(InIP),InPort]),
 			    cdr_file_srv:reset({udp, InIP, InPort}),
 			    {noreply, State#state{known_sources=orddict:store({udp, InIP, InPort}, NewCount, State#state.known_sources)}};
 			error ->
