@@ -440,8 +440,8 @@ get_source(SourceKey, State) ->
 log_cdr(S, State) ->
     ?PRINTDEBUG2("Logging CDRs PID ~p",[self()]),
     Now = now(),
-    Temp_filename = build_filename(S#source.address, Now, State#state.cdr_temp_dir, ""),
-    Final_filename = build_filename(S#source.address, Now, State#state.cdr_dir, ""), 
+    Temp_filename = build_filename(S#source.address, Now, State#state.cdr_temp_dir, ".cdr"),
+    Final_filename = build_filename(S#source.address, Now, State#state.cdr_dir, ".cdr"), 
     SeqNums = write_cdrs(S#source.pending_write_list, Temp_filename, Final_filename),
     cdr_file_srv:flush_pending(S#source.address,SeqNums),
     case SeqNums of
@@ -454,8 +454,8 @@ log_cdr(S, State) ->
 log_duplicate_cdr(S, State) ->
     ?PRINTDEBUG2("Logging duplicate CDRs PID ~p",[self()]),
     Now = now(),
-    Temp_filename = build_filename(S#source.address, Now, State#state.cdr_temp_dir, ".possible_duplicate"),
-    Final_filename = build_filename(S#source.address, Now, State#state.cdr_dir, ".possible_duplicate"), 
+    Temp_filename = build_filename(S#source.address, Now, State#state.cdr_temp_dir, ".possible_duplicate.cdr"),
+    Final_filename = build_filename(S#source.address, Now, State#state.cdr_dir, ".possible_duplicate.cdr"), 
     SeqNums = write_cdrs(S#source.possible_duplicate_list, Temp_filename, Final_filename),
     cdr_file_srv:flush_pending_duplicates(S#source.address,SeqNums),
     case SeqNums of
@@ -543,8 +543,8 @@ flush_pending_timer(State) ->
 									Acc ++ [SeqNum]
 								end, [], S#source.pending_write_list),
 					  Now = now(),
-					  Temp_filename = build_filename(S#source.address, Now, State#state.cdr_temp_dir, ""),
-					  Final_filename = build_filename(S#source.address, Now, State#state.cdr_dir, ""), 
+					  Temp_filename = build_filename(S#source.address, Now, State#state.cdr_temp_dir, ".cdr"),
+					  Final_filename = build_filename(S#source.address, Now, State#state.cdr_dir, ".cdr"), 
 					  SeqNums = write_cdrs(S#source.pending_write_list, Temp_filename, Final_filename),
 					  gen_server:cast(?SERVER, {flush_pending_from_timer,
 								    S#source.address, SeqNums}),
@@ -569,8 +569,8 @@ flush_duplicates_timer(State) ->
 			      [] -> ok;
 			      _ ->
 				  Now = now(),
-				  Temp_filename = build_filename(S#source.address, Now, State#state.cdr_temp_dir, ".possible_duplicate"),
-				  Final_filename = build_filename(S#source.address, Now, State#state.cdr_dir, ".possible_duplicate"), 
+				  Temp_filename = build_filename(S#source.address, Now, State#state.cdr_temp_dir, ".possible_duplicate.cdr"),
+				  Final_filename = build_filename(S#source.address, Now, State#state.cdr_dir, ".possible_duplicate.cdr"), 
 				  SeqNums = write_cdrs(List, Temp_filename, Final_filename),
 				  gen_server:cast(?SERVER, {flush_pending_duplicates_from_timer, S#source.address, SeqNums}),
 				  case SeqNums of
