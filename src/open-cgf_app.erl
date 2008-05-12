@@ -47,6 +47,13 @@ start(_Type, StartArgs) ->
 	{ok, {IP, Port}} ->
 	    'open-cgf_logger':add_handler(syslog, {IP, Port})
     end,
+    case 'open-cgf_config':get_item({'open-cgf', log_dir}, none, none) of %% TODO validation of string or none
+        {ok, none} -> error_logger:info_msg("Errors will not be logged to a file");
+        {ok, Dir} ->
+            Filename = filename:join([Dir, "open-cgf.log"]),
+	    error_logger:info_msg("Logging errors/messages to ~s",[Filename]),
+            ok = error_logger:logfile({open, filename:join([Dir, "open-cgf.log"])})
+    end,
     case 'open-cgf_sup':start_link(StartArgs) of
 	{ok, Pid} -> 
 	    {ok, Pid};
@@ -61,6 +68,7 @@ start(_Type, StartArgs) ->
 %% should do any necessary cleaning up. The return value is ignored. 
 %%--------------------------------------------------------------------
 stop(_State) ->
+    error_logger:logfile(close),
     ok.
 
 %%====================================================================
