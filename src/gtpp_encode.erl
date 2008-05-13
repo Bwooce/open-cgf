@@ -217,15 +217,15 @@ released_seqnums(List) ->
     
 
 charging_gateway_address({IP1, IP2, IP3, IP4}) ->
-    <<251:8, 4:8, IP1:8, IP2:8, IP3:8, IP4:8>>;
+    <<251:8, 4:16, IP1:8, IP2:8, IP3:8, IP4:8>>;
 charging_gateway_address({IP1, IP2, IP3, IP4, IP5, IP6, IP7, IP8}) ->
-    <<251:8, 16:8, IP1:16, IP2:16, IP3:16, IP4:16, 
+    <<251:8, 16:16, IP1:16, IP2:16, IP3:16, IP4:16, 
                    IP5:16, IP6:16, IP7:16, IP8:16>>. 
 
 recommended_node_address({IP1, IP2, IP3, IP4}) ->
-    <<254:8, 4:8, IP1:8, IP2:8, IP3:8, IP4:8>>;
+    <<254:8, 4:16, IP1:8, IP2:8, IP3:8, IP4:8>>;
 recommended_node_address({IP1, IP2, IP3, IP4, IP5, IP6, IP7, IP8}) ->
-    <<254:8, 16:8, IP1:16, IP2:16, IP3:16, IP4:16, 
+    <<254:8, 16:16, IP1:16, IP2:16, IP3:16, IP4:16, 
                    IP5:16, IP6:16, IP7:16, IP8:16>>. 
 
 msg_type(echo_request) -> 1;

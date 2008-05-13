@@ -166,15 +166,15 @@ decode_ie(<<126:8, 4:8, Rest/binary>>, _Len) ->
     {{release_packets, Seq_nums}, Rest2};
 
 %% Charging Gateway Address (or Alternate) 
-decode_ie(<<251:8, 4:8, Address:4, Rest/binary>>, _Len) ->
+decode_ie(<<251:8, 4:16, Address:4, Rest/binary>>, _Len) ->
     {{ipv4, Address}, Rest};
-decode_ie(<<251:8, 16:8, Address:16, Rest/binary>>, _Len) ->
+decode_ie(<<251:8, 16:16, Address:16, Rest/binary>>, _Len) ->
     {{ipv6, Address}, Rest};
 
 %% Recommended Gateway Address (or Alternate) 
-decode_ie(<<254:8, 4:8, Address:4, Rest/binary>>, _Len) ->
+decode_ie(<<254:8, 4:16, Address:4, Rest/binary>>, _Len) ->
     {{ipv4, Address}, Rest};
-decode_ie(<<254:8, 16:8, Address:16, Rest/binary>>, _Len) ->
+decode_ie(<<254:8, 16:16, Address:16, Rest/binary>>, _Len) ->
     {{ipv6, Address}, Rest};
 
 decode_ie(<<249:8, Len:16, SeqNum:16, Rest/binary>>, _Len) ->
