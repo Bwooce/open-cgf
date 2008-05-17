@@ -1,14 +1,118 @@
 %%%-------------------------------------------------------------------
 %%% File    : test_udp_client.erl
-%%% Author  : Bruce Fitzsimons <bruce@fitzsimons.org>
+%%% Author  : root <root@one.w8trk.com>
 %%% Description : 
 %%%
-%%% Created : 30 Jan 2008 by Bruce Fitzsmons <bruce@fitzsimons.org>
+%%% Created : 13 May 2008 by root <root@one.w8trk.com>
 %%%-------------------------------------------------------------------
 -module(test_udp_client).
 
+-behaviour(gen_server).
+
+%% old functions, still exposed
 -export([start_mockup/1, start_replay/2, replay_real/1]).
 
+%% API
+-export([start_link/0, send_udp/7]).
+
+%% gen_server callbacks
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2,
+	 terminate/2, code_change/3]).
+
+-record(state, {socket, expected_queue}).
+
+-define(SERVER, ?MODULE).
+
+%%====================================================================
+%% API
+%%====================================================================
+%%--------------------------------------------------------------------
+%% Function: start_link() -> {ok,Pid} | ignore | {error,Error}
+%% Description: Starts the server
+%%--------------------------------------------------------------------
+start_link() ->
+    gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+
+%%====================================================================
+%% gen_server callbacks
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Function: init(Args) -> {ok, State} |
+%%                         {ok, State, Timeout} |
+%%                         ignore               |
+%%                         {stop, Reason}
+%% Description: Initiates the server
+%%--------------------------------------------------------------------
+init([]) ->
+    {ok, Socket} = gen_udp:open(3385, [binary]),
+    ets:new(test_udp, [set, named_table, private]),
+    ets:insert(test_udp, {seqnum, 65500}), %% let's test rollover while we are here
+    process_flag(trap_exit, true),
+    {ok, #state{socket=Socket}}.
+
+%%--------------------------------------------------------------------
+%% Function: %% handle_call(Request, From, State) -> {reply, Reply, State} |
+%%                                      {reply, Reply, State, Timeout} |
+%%                                      {noreply, State} |
+%%                                      {noreply, State, Timeout} |
+%%                                      {stop, Reason, Reply, State} |
+%%                                      {stop, Reason, State}
+%% Description: Handling call messages
+%%--------------------------------------------------------------------
+handle_call(_Request, _From, State) ->
+    Reply = ok,
+    {reply, Reply, State}.
+
+%%--------------------------------------------------------------------
+%% Function: handle_cast(Msg, State) -> {noreply, State} |
+%%                                      {noreply, State, Timeout} |
+%%                                      {stop, Reason, State}
+%% Description: Handling cast messages
+%%--------------------------------------------------------------------
+handle_cast(_Msg, State) ->
+    {noreply, State}.
+
+%%--------------------------------------------------------------------
+%% Function: handle_info(Info, State) -> {noreply, State} |
+%%                                       {noreply, State, Timeout} |
+%%                                       {stop, Reason, State}
+%% Description: Handling all non call/cast messages
+%%--------------------------------------------------------------------
+handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
+    ?PRINTDEBUG2("Got Message ~p from ~s:~p", [Packet, inet_parse:ntoa(InIP), InPort]),
+    %% decode the header, {InIP, Port, SeqNum} forms a unique tuple. I think. How ugly.
+    case gtpp_decode:decode_message(Packet) of
+     %% {ok,{{gtpp_header,0,0,1,echo_response,2,1},{{count,7},<<>>}}}
+	{ok, {Header, Message}} ->
+	    ok
+    end;
+
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+%%--------------------------------------------------------------------
+%% Function: terminate(Reason, State) -> void()
+%% Description: This function is called by a gen_server when it is about to
+%% terminate. It should be the opposite of Module:init/1 and do any necessary
+%% cleaning up. When it returns, the gen_server terminates with Reason.
+%% The return value is ignored.
+%%--------------------------------------------------------------------
+terminate(_Reason, _State) ->
+    gen_udp:close(State#state.socket),
+    ets:delete(test_udp),
+    ok.
+
+%%--------------------------------------------------------------------
+%% Func: code_change(OldVsn, State, Extra) -> {ok, NewState}
+%% Description: Convert process state when code is changed
+%%--------------------------------------------------------------------
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+%%--------------------------------------------------------------------
+%%% Internal functions
+%%--------------------------------------------------------------------
 
 start_mockup(Address) -> %% Address is {IP,Port}, IP is {aa,bb,cc,dd}
     {ok, Socket} = gen_udp:open(3385, [binary]),
@@ -130,12 +234,12 @@ send_cdrs(Socket, Address, Version, Count) ->
 send_cdr(Socket, {DestIP, DestPort}, Version, SeqNum) ->
     DP = gtpp_encode:ie_data_record_packet(["TEST CDR-"++integer_to_list(SeqNum),"TEST CDR2...-"++integer_to_list(SeqNum)], {1,1,1}, << >>),
     DRTR = gtpp_encode:data_record_transfer_request(Version, SeqNum, data_record_packet, DP, << >>),
-    gen_udp:send(Socket, DestIP, DestPort, DRTR).
+    send_reliably(Socket, {DestIP, DestPort}, SeqNum, DRTR, ?TIMEOUT, ?MAXATTEMPTS).
 
 send_empty_cdr(Socket, {DestIP, DestPort}, Version, SeqNum) ->
     DP = gtpp_encode:ie_data_record_packet([], {1,1,1}, << >>),
     DRTR = gtpp_encode:data_record_transfer_request(Version, SeqNum, data_record_packet, DP, << >>),
-    gen_udp:send(Socket, DestIP, DestPort, DRTR).
+    send_reliably(Socket, {DestIP, DestPort}, SeqNum, DRTR, ?TIMEOUT, ?MAXATTEMPTS).
 
 send_dup_cdrs(_Socket, _Address, _Version, 0) ->
     ok;
@@ -147,15 +251,36 @@ send_dup_cdr(Socket, {DestIP, DestPort}, Version, SeqNum) ->
     DP = gtpp_encode:ie_data_record_packet(["TEST CDR-POTENTIAL_DUP-A-"++integer_to_list(SeqNum),
 					    "TEST CDR-POTENTIAL_DUP-B...-"++integer_to_list(SeqNum)], {1,1,1}, << >>),
     DRTR = gtpp_encode:data_record_transfer_request(Version, SeqNum, send_potential_duplicate_data_record_packet, DP, << >>),
-    gen_udp:send(Socket, DestIP, DestPort, DRTR).
+    send_reliably(Socket, {DestIP, DestPort}, SeqNum, DRTR, ?TIMEOUT, ?MAXATTEMPTS).
 
 send_cancel_cdr(Socket, {DestIP, DestPort}, Version, SeqNum, SeqNums) ->
     DRTR = gtpp_encode:data_record_transfer_request(Version, SeqNum, cancel_packets, SeqNums, << >>),
-    gen_udp:send(Socket, DestIP, DestPort, DRTR).
+    send_reliably(Socket, {DestIP, DestPort}, SeqNum, DRTR, ?TIMEOUT, ?MAXATTEMPTS).
 
 send_release_cdr(Socket, {DestIP, DestPort}, Version, SeqNum, SeqNums) ->
     DRTR = gtpp_encode:data_record_transfer_request(Version, SeqNum, release_packets, SeqNums, << >>),
-    gen_udp:send(Socket, DestIP, DestPort, DRTR).
+    send_reliably(Socket, {DestIP, DestPort}, SeqNum, DRTR, ?TIMEOUT, ?MAXATTEMPTS).
 
 next_seqnum() ->
     ets:update_counter(test, seqnum, {2,1,65535,0}).
+
+send_reliably(Socket, Dest, SeqNum, Msg, Timeout, MaxAttempts) ->
+    spawn_link(?MODULE, send_udp, [self(), Socket, Dest, SeqNum, Msg, Timeout, MaxAttempts]).
+
+send_udp(OwnerPid, _Socket, Dest, SeqNum, _Msg, _Timeout, 0) ->
+    OwnerPid ! {timeout, Dest, SeqNum};
+send_udp(OwnerPid, Socket, {IP,Port}, SeqNum, Msg, Timeout, MaxAttempts) ->
+    ok = gen_udp:send(Socket, IP, Port, Msg),
+    receive
+	ack -> ok %% die a sweet death knowing that all is right with the world		    
+    after Timeout*1000 ->
+	    send_udp(OwnerPid, Socket, {IP,Port}, SeqNum, Msg, Timeout*2, MaxAttempts-1) %% back off on send
+    end.
+
+reliable_ack(Src, SeqNum, List) ->
+   case lists:member({Src, SeqNum}, List) of
+	{value, Pid} -> 
+	   Pid ! ack,
+	   lists:delete({Src, SeqNum}, List);
+	_ -> ok
+   end.

@@ -57,7 +57,7 @@ start_link(_) ->
 %%--------------------------------------------------------------------
 init([]) ->
     {ok, StartTCP} = 'open-cgf_config':get_item({'open-cgf',tcp_server}, bool, false), %%% only start the TCP server if required
-    {ok, MaxRestarts} = 'open-cgf_config':get_item({'open-cgf',max_restarts}, {integer, 1, 1000}, 10),
+    {ok, MaxRestarts} = 'open-cgf_config':get_item({'open-cgf',max_restarts}, {integer, 0, 1000}, 10),
     CTLServer = {'CTLServer',{'open-cgf_ctl',start_link,[]},
 		     permanent,2000,worker,['open-cgf_ctl']},
     CDRFileServer = {'CDRServer',{cdr_file_srv,start_link,[]},
