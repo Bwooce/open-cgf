@@ -56,6 +56,7 @@ start(_Type, StartArgs) ->
     end,
     case 'open-cgf_sup':start_link(StartArgs) of
 	{ok, Pid} -> 
+	    'open-cgf_state':inc_restart_counter(), %% both TCP and UDP servers do this so if either restarts it is noticable
 	    {ok, Pid};
 	Error ->
 	    Error

@@ -1,9 +1,9 @@
 %%%-------------------------------------------------------------------
-%%% File    : gtp_udp_client.erl
+%%% File    : gtp_tcp_connection.erl
 %%% Author  : Bruce Fitzsimons <bruce@fitzsimons.org>
 %%% Description : 
 %%%
-%%% Created : 18 Jan 2008 by Bruce Fitzsimons <bruce@fitzsimons.org>
+%%% Created : 22 May 2008 by Bruce Fitzsimons <bruce@fitzsimons.org>
 %%%
 %%% Copyright 2008 Bruce Fitzsimons
 %%%
@@ -21,7 +21,7 @@
 %%% You should have received a copy of the GNU General Public License
 %%% along with open-cgf.  If not, see <http://www.gnu.org/licenses/>.
 %%%-------------------------------------------------------------------
--module(gtpp_udp_server).
+-module(gtpp_tcp_connection).
 
 -behaviour(gen_server).
 
@@ -30,13 +30,13 @@
 -include("gtp.hrl").
 
 %% API
--export([start_link/0, send_udp/7]).
+-export([start_link/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
 
--record(state, {socket, ip, port, version, known_sources, outstanding_requests, altCGF, t3_response, n3_requests}).
+-record(state, {socket, ip, port, version, last_request_ts, timeout, altCGF, dest_ip, dest_port}).
 
 %%====================================================================
 %% API
@@ -45,8 +45,12 @@
 %% Function: start_link() -> {ok,Pid} | ignore | {error,Error}
 %% Description: Starts the server
 %%--------------------------------------------------------------------
-start_link() ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+start_link({IP, Port}) -> %% connect to this when started
+    gen_server:start_link(?MODULE, [{IP, Port}], []);
+
+start_link(Socket) -> %% incoming connection already accepted
+    gen_server:start_link(?MODULE, [Socket], []).
+    
 
 %%====================================================================
 %% gen_server callbacks
@@ -59,26 +63,46 @@ start_link() ->
 %%                         {stop, Reason}
 %% Description: Initiates the server
 %%--------------------------------------------------------------------
-init([]) ->
-    RSCounter = 'open-cgf_state':get_restart_counter(), 
+init([{IP, Port}]) ->
+    ?PRINTDEBUG2("gtpp_tcp_connection attempting connection to ~s:~B",[ inet_parse:ntoa(IP), Port]),
+    %% get setup info
+    State = get_config(),
+    %% connect
+    case gen_tcp:connect(IP, Port, [{ip, State#state.ip}, binary, {packet, 0}], 10*1000) of
+	{ok, Socket} ->
+	    error_logger:info_msg("open-cgf connected from ~s:~B to CDF ~s:~B TCP", [inet_parse:ntoa(State#state.ip), State#state.port,
+										     inet_parse:ntoa(IP), Port]),
+	    SeqNum = 'open-cgf_state':get_next_seqnum({tcp, IP, Port}),
+	    R = gtpp_encode:node_alive_request(State#state.version, SeqNum, State#state.ip, << >>), 
+	    ok = gen_tcp:send(Socket, R),
+	    process_flag(trap_exit, true),
+	    {ok, State#state{socket=Socket, dest_ip=IP, dest_port=Port, last_request_ts=greg_now()}};
+	{error, Reason} ->
+	    error_logger:warning_msg("open-cgf failed to connect from ~s:~B to CDF ~s:~B TCP - reason ~p", [inet_parse:ntoa(State#state.ip), State#state.port,
+													    inet_parse:ntoa(IP), Port, Reason]),
+	    {ok, {error, Reason}}
+    end;
+
+init([Socket]) ->
+    %% get setup info
+    State = get_config(),
+    %% already accepted
+    {ok, {IP, Port}} = inet:peername(Socket),
+    error_logger:info_msg("open-cgf connected from ~s:~B to CDF ~s:~B TCP", [inet_parse:ntoa(State#state.ip), State#state.port,
+									     inet_parse:ntoa(IP), Port]),
+    SeqNum = 'open-cgf_state':get_next_seqnum({tcp, IP, Port}),
+    R = gtpp_encode:node_alive_request(State#state.version, SeqNum, State#state.ip, << >>), 
+    ok = gen_tcp:send(Socket, R),
+    process_flag(trap_exit, true),
+    {ok, State#state{socket=Socket, dest_ip=IP, dest_port=Port, last_request_ts=greg_now()}}.
+
+get_config() ->
     {ok, {IP,Port}} = 'open-cgf_config':get_item({'open-cgf', listen}, ip_port), %% error and crash if no match
-    {ok, Socket} = gen_udp:open(Port, [binary,{ip, IP},{recbuf, 300000}, {read_packets, 50}]),
-    error_logger:info_msg("open-cgf listening on ~s:~B UDP - session counter ~p~n",[inet_parse:ntoa(IP), Port, RSCounter]),
-    {ok, CDFs} = 'open-cgf_config':get_item({'open-cgf', cdf_list}, none, []), %% default to [] (none), validation is TODO
     {ok, Version} = 'open-cgf_config':get_item({'open-cgf', gtpp_version}, {integer, 0, 2}, 2), %% default to 2, make people move into the future
     {ok, AltCGF} = 'open-cgf_config':get_item({'open-cgf', peer_cgf}, none, none), %% default to none, validation is TODO
-    {ok, T3Response} = 'open-cgf_config':get_item({'open-cgf', t3_response}, {integer, 1, 3600}, 1),
-    {ok, N3Requests} = 'open-cgf_config':get_item({'open-cgf', n3_requests}, {integer, 1, 100}, 5),
-    Outstanding = lists:foldl(fun({DestIP, DestPort}, Acc) ->
-				      error_logger:info_msg("open-cgf sending echo request and node_alive request to ~s:~p~n",
-							    [inet_parse:ntoa(DestIP), DestPort]),
-				      {ok, ERPid, ERSeq} = send_echo_request(Socket, Version, {DestIP,DestPort}, T3Response, N3Requests),
-				      {ok, NAPid, NASeq} = send_node_alive_request(Socket, Version, {DestIP, DestPort}, IP, T3Response, N3Requests),
-				      Acc ++ [{NAPid, NASeq}, {ERPid, ERSeq}]
-			      end, [], CDFs),			  
-    process_flag(trap_exit, true),
-    {ok, #state{socket=Socket, ip=IP, port=Port, version=Version, known_sources=orddict:new(), altCGF=AltCGF, 
-		outstanding_requests=Outstanding, t3_response=T3Response, n3_requests=N3Requests}}.
+    {ok, Timeout} = 'open-cgf_config':get_item({'open-cgf', tcp_timeout}, {integer, 1, 3600}, 15), %% heartbeat-like timeout
+    #state{ip=IP, port=Port, version=Version, altCGF=AltCGF, timeout=Timeout}.
+
 
 %%--------------------------------------------------------------------
 %% Function: %% handle_call(Request, From, State) -> {reply, Reply, State} |
@@ -108,9 +132,24 @@ handle_cast(_Msg, State) ->
 %%                                       {stop, Reason, State}
 %% Description: Handling all non call/cast messages
 %%--------------------------------------------------------------------
-handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
-    ?PRINTDEBUG2("Got Message ~p from ~s:~p", [Packet, inet_parse:ntoa(InIP), InPort]),
-    %% decode the header, {InIP, Port, SeqNum} forms a unique tuple. I think. How ugly.
+handle_info({controlled_shutdown}, State) ->
+    {stop, normal, State};
+
+handle_info({tcp_closed, _Socket}, State) ->
+    error_logger:warning_msg("open-cgf connection closed from ~s:~B to CDF ~s:~B TCP", [inet_parse:ntoa(State#state.ip), State#state.port,
+											inet_parse:ntoa(State#state.dest_ip), State#state.dest_port]),
+    {stop, tcp_closed, State};
+
+handle_info({tcp_error, _Socket, Reason}, State) ->
+    error_logger:warning_msg("open-cgf connection error ~p from ~s:~B to CDF ~s:~B TCP - closing", [Reason,
+												    inet_parse:ntoa(State#state.ip), 
+												    State#state.port,
+												    inet_parse:ntoa(State#state.dest_ip), 
+												    State#state.dest_port]),
+    {stop, tcp_closed, State};
+
+handle_info({tcp, Socket, Packet}, State) ->
+    SourceKey = {tcp, State#state.dest_ip, State#state.dest_port},
     case gtpp_decode:decode_message(Packet) of
      %% {ok,{{gtpp_header,0,0,1,echo_response,2,1},{{count,7},<<>>}}}
 	{ok, {Header, Message}} ->
@@ -121,79 +160,58 @@ handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
 		    {{Type, _Content}, _} = Message,
 		    case Type of 
 			send_data_record_packet ->
-			    cdr_file_srv:log({udp, InIP, InPort}, Header#gtpp_header.seqnum, Message),
-			    send_data_record_transfer_response(InSocket, State#state.version, Header#gtpp_header.seqnum,
-							       {InIP, InPort}, 
+			    cdr_file_srv:log(SourceKey, Header#gtpp_header.seqnum, Message),
+			    send_data_record_transfer_response(Socket, State#state.version, Header#gtpp_header.seqnum,
 							       request_accepted, [Header#gtpp_header.seqnum]),
 				    
 			    {noreply, State};
 			send_potential_duplicate_record_packet ->
-			    Resp = case cdr_file_srv:check_duplicate({udp, InIP, InPort}, Header#gtpp_header.seqnum) of
+			    Resp = case cdr_file_srv:check_duplicate(SourceKey, Header#gtpp_header.seqnum) of
 				       false ->
-					   cdr_file_srv:log_possible_dup({udp, InIP, InPort}, Header#gtpp_header.seqnum, Message),
+					   cdr_file_srv:log_possible_dup(SourceKey, Header#gtpp_header.seqnum, Message),
 					   request_accepted;
 				       true ->
 					   error_logger:warning_msg("Duplicate sequence number ~p from ~s:~B",
-								    [Header#gtpp_header.seqnum, inet_parse:ntoa(InIP), InPort]),   
+								    [Header#gtpp_header.seqnum, 
+								     inet_parse:ntoa(State#state.dest_ip), State#state.dest_port]),   
 					   request_related_to_duplicates_already_fulfilled
 				   end,
-			    send_data_record_transfer_response(InSocket, State#state.version, Header#gtpp_header.seqnum,
-							       {InIP, InPort}, 
+			    send_data_record_transfer_response(Socket, State#state.version, Header#gtpp_header.seqnum,
 							       Resp, [Header#gtpp_header.seqnum]),
 			    {noreply, State};
 			cancel_packets ->
 			    {{cancel_packets, {sequence_numbers, SeqNums}}, _} = Message,
 			    ?PRINTDEBUG2("Cancelling packets with seqnums [~s]",['open-cgf_logger':format_seqnums(SeqNums)]),
-			    cdr_file_srv:remove_possible_dup({udp, InIP, InPort}, Header#gtpp_header.seqnum, SeqNums),
-			    send_data_record_transfer_response(InSocket, State#state.version, Header#gtpp_header.seqnum,
-							       {InIP, InPort}, 
+			    cdr_file_srv:remove_possible_dup(SourceKey, Header#gtpp_header.seqnum, SeqNums),
+			    send_data_record_transfer_response(Socket, State#state.version, Header#gtpp_header.seqnum,
 							       request_accepted, [Header#gtpp_header.seqnum]),
 			    {noreply, State};
 			release_packets ->
 			    {{release_packets, {sequence_numbers, SeqNums}}, _} = Message,
 			    ?PRINTDEBUG2("Releasing packets with seqnums [~s]",['open-cgf_logger':format_seqnums(SeqNums)]),
-			    cdr_file_srv:commit_possible_dup({udp, InIP, InPort}, Header#gtpp_header.seqnum, SeqNums),
-			    send_data_record_transfer_response(InSocket, State#state.version, Header#gtpp_header.seqnum,
-							       {InIP, InPort}, 
+			    cdr_file_srv:commit_possible_dup(SourceKey, Header#gtpp_header.seqnum, SeqNums),
+			    send_data_record_transfer_response(Socket, State#state.version, Header#gtpp_header.seqnum,
 							       request_accepted, [Header#gtpp_header.seqnum]),
 			    {noreply, State};
 			Other ->
-			    send_data_record_transfer_response(InSocket, State#state.version, Header#gtpp_header.seqnum,
-							       {InIP, InPort}, 
+			    send_data_record_transfer_response(Socket, State#state.version, Header#gtpp_header.seqnum,
 							       invalid_message_format, [Header#gtpp_header.seqnum]),
 	                    error_logger:error_msg("Ignored data transfer request with invalid content ~p",[Other]),
 			    {noreply, State}
 		    end;
 		node_alive_request ->
-		    send_node_alive_response(InSocket, State#state.version, Header#gtpp_header.seqnum,
-					     {InIP, InPort}),
+		    send_node_alive_response(Socket, State#state.version, Header#gtpp_header.seqnum),
 		    {noreply, State};
 		node_alive_response ->
-		    NewOutstanding = reliable_ack({InIP, InPort}, Header#gtpp_header.seqnum, State#state.outstanding_requests),
-		    {noreply, State#state{outstanding_requests=NewOutstanding}};
+		    %% reset timestamp
+		    {noreply, State#state{last_request_ts=0}};
 		redirection_response ->
 		    {noreply, State};
 		echo_request ->
-		    send_echo_response(InSocket, State#state.version, Header#gtpp_header.seqnum,
-				       {InIP, InPort}),
+		    send_echo_response(Socket, State#state.version, Header#gtpp_header.seqnum),
 		    {noreply, State};
 		echo_response ->
-		    NewOutstanding = reliable_ack({InIP, InPort}, Header#gtpp_header.seqnum, State#state.outstanding_requests),
-		    {{count, NewCount}, _} = Message,
-		    case orddict:find({udp, InIP, InPort}, State#state.known_sources) of
-			{ok, NewCount} ->
-			    {noreply, State#state{outstanding_requests=NewOutstanding}}; %% endpoint is known and has not restarted
-			{ok, _} ->
-			    %% endpoint is known and has restarted. Sound the klaxxon.
-			    error_logger:warning_msg("CDF ~s:~p has restarted, saving pending CDRs and resetting sequencing",
-						     [inet_parse:ntoa(InIP),InPort]),
-			    cdr_file_srv:reset({udp, InIP, InPort}),
-			    {noreply, State#state{known_sources=orddict:store({udp, InIP, InPort}, NewCount, State#state.known_sources),
-						  outstanding_requests=NewOutstanding}};
-			error ->
-			    {noreply, State#state{known_sources=orddict:store({udp, InIP, InPort}, NewCount, State#state.known_sources),
-						  outstanding_requests=NewOutstanding}}
-		    end
+		    {noreply, State#state{last_request_ts=0}}
 	    end;
 	{error, _Reason} ->
 	    %% Send back error of some kind TODO
@@ -209,6 +227,8 @@ handle_info(Info, State) ->
     error_logger:warning_msg("Got unhandled info ~p while in state ~p",[Info, State]),
     {noreply, State}.
 
+    
+
 %%--------------------------------------------------------------------
 %% Function: terminate(Reason, State) -> void()
 %% Description: This function is called by a gen_server when it is about to
@@ -217,18 +237,15 @@ handle_info(Info, State) ->
 %% The return value is ignored.
 %%--------------------------------------------------------------------
 terminate(Reason, State) ->
-    error_logger:info_msg("Closing open-cgf udp server for reason: \"~p\". Sending redirection requests to all known CDFs~n", [Reason]),
+    cdr_file_srv:reset({tcp, State#state.dest_ip, State#state.dest_port}),
     case Reason of
-	normal ->     timer:sleep(1000); %% give cdr_file_srv a second to catch up, if required. TODO improve this to be synchronised
-	_ -> ok %% no time to bugger around
+	normal ->  
+	    SeqNum = 'open-cgf_state':get_next_seqnum({tcp, State#state.dest_ip, State#state.dest_port}),	    
+	    send_redirection_request(State#state.socket, State#state.version, SeqNum,
+				    State#state.altCGF),
+	    gen_tcp:close(State#state.socket);
+	_ -> ok  %% assume it is already closed
     end,
-    %% don't bother storing them in a queue, we're shutting down so we're allowed to be messy.
-    lists:foreach(fun({{udp, DestIP, DestPort}, _Count}) ->
-			  error_logger:info_msg("Sending redirection to CDF ~s:~p", [inet_parse:ntoa(DestIP), DestPort]), 
-			  send_redirection_request(State#state.socket, State#state.version, {DestIP, DestPort}, State#state.altCGF, 
-						   State#state.t3_response, State#state.n3_requests)
-		  end, orddict:to_list(State#state.known_sources)),
-    error_logger:info_msg("~nopen-cgf udp exiting~n~n"),
     ok.
 
 %%--------------------------------------------------------------------
@@ -241,61 +258,33 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 %%% Internal functions
 %%--------------------------------------------------------------------
-send_data_record_transfer_response(Socket, Version, SeqNum, {InIP, InPort}, Cause, SeqNums) ->
-    R = gtpp_encode:data_record_transfer_response(Version, SeqNum, Cause, SeqNums, << >>), 
-    ok = gen_udp:send(Socket, InIP, InPort, R).
 
-send_echo_response(Socket, Version, SeqNum, {InIP, InPort}) ->
+send_data_record_transfer_response(Socket, Version, SeqNum, Cause, SeqNums) ->
+    R = gtpp_encode:data_record_transfer_response(Version, SeqNum, Cause, SeqNums, << >>), 
+    ok = gen_tcp:send(Socket, R).
+
+send_echo_response(Socket, Version, SeqNum) ->
     RC = 'open-cgf_state':get_restart_counter(),
     R = gtpp_encode:echo_response(Version, SeqNum, RC, << >>), 
-    ok = gen_udp:send(Socket, InIP, InPort, R).
+    ok = gen_tcp:send(Socket, R).
 
-send_echo_request(Socket, Version, Dest, Timeout, MaxAttempts) ->
-    SeqNum = 'open-cgf_state':get_next_seqnum(Dest),
+send_echo_request(Socket, SeqNum, Version) ->
     R = gtpp_encode:echo_request(Version, SeqNum, << >>), 
-    Pid = send_reliably(Socket, Dest, SeqNum, R, Timeout, MaxAttempts),
-    {ok, Pid, SeqNum}.
+    ok = gen_tcp:send(Socket, R).
 
-send_node_alive_request(Socket, Version, Dest, MyAddress, Timeout, MaxAttempts) ->
-    SeqNum = 'open-cgf_state':get_next_seqnum(Dest),
-    R = gtpp_encode:node_alive_request(Version, SeqNum, MyAddress, << >>), 
-    Pid = send_reliably(Socket, Dest, SeqNum, R, Timeout, MaxAttempts),
-    {ok, Pid, SeqNum}.
-
-send_node_alive_response(Socket, Version, SeqNum, {InIP, InPort}) ->
+send_node_alive_response(Socket, Version, SeqNum) ->
     R = gtpp_encode:node_alive_response(Version, SeqNum, << >>), 
-    ok = gen_udp:send(Socket, InIP, InPort, R).
+    ok = gen_tcp:send(Socket, R).
     
-send_redirection_request(Socket, Version, Dest, AltCGF, Timeout, MaxAttempts) ->
-    SeqNum = 'open-cgf_state':get_next_seqnum(Dest),
+send_redirection_request(Socket, Version, SeqNum, AltCGF) ->
     R = case AltCGF of 
 	    none ->
 		gtpp_encode:redirection_request(Version, SeqNum, node_about_to_go_down, << >>);
 	    _ ->
 		gtpp_encode:redirection_request(Version, SeqNum, node_about_to_go_down, AltCGF, << >>)
 	end,
-    Pid = send_reliably(Socket, Dest, SeqNum, R, Timeout, MaxAttempts),
-    {ok, Pid, SeqNum}.
+    ok = gen_tcp:send(Socket, R).
 
-
-send_reliably(Socket, Dest, SeqNum, Msg, Timeout, MaxAttempts) ->
-    spawn(?MODULE, send_udp, [self(), Socket, Dest, SeqNum, Msg, Timeout, MaxAttempts]).
-
-send_udp(OwnerPid, _Socket, Dest, SeqNum, _Msg, _Timeout, 0) ->
-    OwnerPid ! {timeout, Dest, SeqNum};
-send_udp(OwnerPid, Socket, {IP,Port}, SeqNum, Msg, Timeout, MaxAttempts) ->
-    ok = gen_udp:send(Socket, IP, Port, Msg),
-    receive
-	ack -> ok %% die a sweet death knowing that all is right with the world		    
-    after Timeout*1000 ->
-	    send_udp(OwnerPid, Socket, {IP,Port}, SeqNum, Msg, Timeout*2, MaxAttempts-1) %% back off on send
-    end.
-
-reliable_ack(Src, SeqNum, List) ->
-   case lists:member({Src, SeqNum}, List) of
-	{value, Pid} -> 
-	   Pid ! ack,
-	   lists:delete({Src, SeqNum}, List);
-	_ -> ok
-   end.
  
+greg_now() ->
+    calendar:datetime_to_gregorian_seconds({date(), time()}).
