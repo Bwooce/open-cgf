@@ -1,0 +1,21 @@
+open-cgf is only tested under linux. It might work under Windows, but it is unlikely to do so without changes. 
+If you'd like Windows support, please raise an issue at http://code.google.com/p/open-cgf/issues/list
+Solaris support is probable, but again untested.
+
+Steps to install. 
+0. Install Erlang, using packages from http://www.erlang.org or your distribution's package manager.
+1. Untar or use subversion to get latest software.
+2. Type 'make debug' in the ./src directory
+3. Edit the configuration file in the ./etc directory to suit your local environment. 
+     Commented-out (%%) options have a default, so leave them commented out until you have the system running...
+
+You are now ready to run open-cgf. 
+a. In ./bin type ./open-cgf -i
+b. If it starts up successfully you will see many messages, and it will leave you at the Erlang shell prompt 1>
+c. Enable your GGSN/SGSN/ITP and monitor the messages, CDRs will be automatically written.
+
+Recompiling without debug on will reduce the noise level significantly, but open-cgf is still undergoing integration and the more debug the better. 
+Please send any fault, bug, enhancements to feedback@3gtelcotools.com -- I'd love to hear from you.
+
+Cheers,
+Bruce
