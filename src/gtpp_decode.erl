@@ -25,7 +25,7 @@
 
 
 %% API
--export([decode_message/1, test/0, test2/0]).
+-export([decode_GTPP_header/1, decode_message/1, test/0, test2/0]).
 
 -include("open-cgf.hrl").
 -include("gtp.hrl").
@@ -74,30 +74,29 @@ decode_message(Bin) ->
 	    % respond with something saying WTF
 	    {error, unknown_msg_type};
 	echo_request -> 
-	    {ok, {Header, {none, Rest}}};
+	    {ok, {Header, [none, Rest]}};
 	echo_response ->
-	    {Decode, Rest2} = decode_ies(Rest, Header#gtpp_header.msg_len),
-	    {ok, {Header, {Decode, Rest2}}};
+	    IEs = decode_ies(Rest, Header#gtpp_header.msg_len),
+	    {ok, {Header, IEs}};
 	version_not_supported ->
-	    {ok, {Header, {none, Rest}}};
+	    {ok, {Header, [none, Rest]}};
 	node_alive_request ->
-	    {Response, Rest2} = decode_ies(Rest,  Header#gtpp_header.msg_len), %% TODO, cope with alternate node address
-	    {ok, {Header, {Response, Rest2}}};
+	    IEs = decode_ies(Rest,  Header#gtpp_header.msg_len), %% TODO, cope with alternate node address
+	    {ok, {Header, IEs}};
 	node_alive_response ->
-	    {ok, {Header, {none, Rest}}};
+	    {ok, {Header,[none, Rest]}};
 	redirection_request ->
-	    {Decode, Rest2} = decode_ies(Rest, Header#gtpp_header.msg_len),
-	    {ok, {Header, {Decode, Rest2}}}; %% TODO, cope with addresses not just cause
+	    IEs = decode_ies(Rest, Header#gtpp_header.msg_len),
+	    {ok, {Header, IEs}}; %% TODO, cope with addresses not just cause
 	redirection_response ->
-	    {Decode, Rest2} = decode_ies(Rest, Header#gtpp_header.msg_len),
-	    {ok, {Header, {Decode, Rest2}}};
+	    IEs = decode_ies(Rest, Header#gtpp_header.msg_len),
+	    {ok, {Header, IEs}};
 	data_record_transfer_request ->
-	    Response = decode_ies(Rest, Header#gtpp_header.msg_len),
-	    {ok, {Header, Response}};
+	    IEs = decode_ies(Rest, Header#gtpp_header.msg_len),
+	    {ok, {Header, IEs}};
 	data_record_transfer_response ->
-	    {Response, Rest2} = decode_ies(Rest, Header#gtpp_header.msg_len),
-%%	    {Response, Rest3} = decode_ie(Rest2, Header#gtpp_header.msg_len-2),
-	    {ok, {Header, {Response, Rest2}}};
+	    IEs = decode_ies(Rest, Header#gtpp_header.msg_len),
+	    {ok, {Header, IEs}};
 	invalid_msg_type ->
 	    %% as per unknown
 	    {error, invalid_msg_type}
@@ -124,16 +123,16 @@ decode_msg_type(_) -> invalid_msg_type. %% not valid for GTP' at least.
 %% TODO - decide if gtpp_decode should really return a tuple (implying order) 
 %% or a tagged list considering we're decoding in any order.
 decode_ies(Bin, Len) ->
-    decode_ies2(Bin, Len, {}).
+    decode_ies2(Bin, Len, []).
 decode_ies2(<< >>, _, Acc) ->
     ?PRINTDEBUG2("Finished processing IEs, Acc is ~p",[Acc]),
-    erlang:append_element(Acc, << >>);
+    Acc ++ [<< >>];
 decode_ies2(Rest, 0, Acc) ->
     ?PRINTDEBUG2("Finished processing IEs (len remain=0), Acc is ~p, Bin=~p",[Acc,Rest]),
-    erlang:append_element(Acc, Rest);
+    Acc ++ [Rest];
 decode_ies2(Bin, Len, Acc) ->
     {Decode, Rest} = decode_ie(Bin, Len),
-    decode_ies2(Rest, size(Rest), erlang:append_element(Acc, Decode)).
+    decode_ies2(Rest, size(Rest), Acc ++ [Decode]).
 
 %% cause decode - could decode further in future...
 decode_ie(<<1:8, Value:8, Rest/binary>>, _Len) ->
@@ -166,15 +165,15 @@ decode_ie(<<126:8, 4:8, Rest/binary>>, _Len) ->
     {{release_packets, Seq_nums}, Rest2};
 
 %% Charging Gateway Address (or Alternate) 
-decode_ie(<<251:8, 4:16, Address:4, Rest/binary>>, _Len) ->
+decode_ie(<<251:8, 4:16, Address:4/binary, Rest/binary>>, _Len) ->
     {{ipv4, Address}, Rest};
-decode_ie(<<251:8, 16:16, Address:16, Rest/binary>>, _Len) ->
+decode_ie(<<251:8, 16:16, Address:16/binary, Rest/binary>>, _Len) ->
     {{ipv6, Address}, Rest};
 
 %% Recommended Gateway Address (or Alternate) 
-decode_ie(<<254:8, 4:16, Address:4, Rest/binary>>, _Len) ->
+decode_ie(<<254:8, 4:16, Address:4/binary, Rest/binary>>, _Len) ->
     {{ipv4, Address}, Rest};
-decode_ie(<<254:8, 16:16, Address:16, Rest/binary>>, _Len) ->
+decode_ie(<<254:8, 16:16, Address:16/binary, Rest/binary>>, _Len) ->
     {{ipv6, Address}, Rest};
 
 decode_ie(<<249:8, Len:16, SeqNum:16, Rest/binary>>, _Len) ->

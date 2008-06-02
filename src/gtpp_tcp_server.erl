@@ -67,7 +67,7 @@ init([]) ->
     error_logger:info_msg("open-cgf listening on ~s:~B TCP - session counter ~p~n",[inet_parse:ntoa(IP), Port, RSCounter]),
     {ok, CDFs} = 'open-cgf_config':get_item({'open-cgf', cdf_list}, none, []), %% default to [] (none), validation is TODO
     Connections = lists:foldl(fun({DestIP, DestPort}, Acc) ->
-				      case gtpp_tcp_connection:start_link({DestIP, DestPort}) of
+				      case gtpp_tcp_connection:start({DestIP, DestPort}) of
 					  {ok, {error, _Reason}} ->  Acc;
 					  {ok, Pid} -> Acc ++ [Pid]
 				      end
@@ -107,9 +107,7 @@ handle_info({'EXIT', _Pid, _Reason}, State) ->
     %% remove from lists of open connections, I guess.
     {noreply, State};
 
-handle_info({Pid, new_connection, Socket}, State) ->
-    {ok, Pid} = gtpp_tcp_connection:start_link(Socket),
-    ok = gen_tcp:controlling_process(Socket, Pid),
+handle_info({_LoopPid, new_connection, Pid}, State) ->
     {noreply, State#state{connections=State#state.connections ++ [Pid]}};
 
 handle_info(Info, State) ->
@@ -147,12 +145,14 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%--------------------------------------------------------------------
 listen_loop_init(OwnerPid, {IP, Port}) ->
-    {ok, LSock} = gen_tcp:listen(Port, [binary, {packet, 0}, {active, true}, {ip, IP}]),
+    {ok, LSock} = gen_tcp:listen(Port, [binary, {packet, 0}, {active, true}, {ip, IP}, {reuseaddr, true}]),
     listen_loop(OwnerPid, LSock).
 listen_loop(OwnerPid, LSock) ->
     case gen_tcp:accept(LSock) of
 	{ok, Socket} ->
-	    OwnerPid ! {self(), new_connection, Socket},
+	    {ok, Pid} = gtpp_tcp_connection:start(Socket),
+	    ok = gen_tcp:controlling_process(Socket, Pid),
+	    OwnerPid ! {self(), new_connection, Pid},
 	    listen_loop(OwnerPid, LSock);
 	{error, closed} ->
 	    ok;

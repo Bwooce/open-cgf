@@ -30,13 +30,13 @@
 -include("gtp.hrl").
 
 %% API
--export([start_link/1]).
+-export([start/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
 
--record(state, {socket, ip, port, version, last_request_ts, timeout, altCGF, dest_ip, dest_port}).
+-record(state, {socket, ip, port, buffer, version, last_request_ts, timeout, altCGF, dest_ip, dest_port}).
 
 %%====================================================================
 %% API
@@ -45,10 +45,10 @@
 %% Function: start_link() -> {ok,Pid} | ignore | {error,Error}
 %% Description: Starts the server
 %%--------------------------------------------------------------------
-start_link({IP, Port}) -> %% connect to this when started
+start({IP, Port}) -> %% connect to this when started
     gen_server:start_link(?MODULE, [{IP, Port}], []);
 
-start_link(Socket) -> %% incoming connection already accepted
+start(Socket) -> %% incoming connection already accepted
     gen_server:start_link(?MODULE, [Socket], []).
     
 
@@ -76,7 +76,7 @@ init([{IP, Port}]) ->
 	    R = gtpp_encode:node_alive_request(State#state.version, SeqNum, State#state.ip, << >>), 
 	    ok = gen_tcp:send(Socket, R),
 	    process_flag(trap_exit, true),
-	    {ok, State#state{socket=Socket, dest_ip=IP, dest_port=Port, last_request_ts=greg_now()}};
+	    {ok, State#state{socket=Socket, dest_ip=IP, dest_port=Port, last_request_ts=greg_now(), buffer= << >>}};
 	{error, Reason} ->
 	    error_logger:warning_msg("open-cgf failed to connect from ~s:~B to CDF ~s:~B TCP - reason ~p", [inet_parse:ntoa(State#state.ip), State#state.port,
 													    inet_parse:ntoa(IP), Port, Reason]),
@@ -94,7 +94,7 @@ init([Socket]) ->
     R = gtpp_encode:node_alive_request(State#state.version, SeqNum, State#state.ip, << >>), 
     ok = gen_tcp:send(Socket, R),
     process_flag(trap_exit, true),
-    {ok, State#state{socket=Socket, dest_ip=IP, dest_port=Port, last_request_ts=greg_now()}}.
+    {ok, State#state{socket=Socket, dest_ip=IP, dest_port=Port, last_request_ts=greg_now(), buffer = << >>}}.
 
 get_config() ->
     {ok, {IP,Port}} = 'open-cgf_config':get_item({'open-cgf', listen}, ip_port), %% error and crash if no match
@@ -133,12 +133,12 @@ handle_cast(_Msg, State) ->
 %% Description: Handling all non call/cast messages
 %%--------------------------------------------------------------------
 handle_info({controlled_shutdown}, State) ->
-    {stop, normal, State};
+    {stop, shutdown, State};
 
 handle_info({tcp_closed, _Socket}, State) ->
     error_logger:warning_msg("open-cgf connection closed from ~s:~B to CDF ~s:~B TCP", [inet_parse:ntoa(State#state.ip), State#state.port,
 											inet_parse:ntoa(State#state.dest_ip), State#state.dest_port]),
-    {stop, tcp_closed, State};
+    {stop, normal, State#state{socket=undefined}};
 
 handle_info({tcp_error, _Socket, Reason}, State) ->
     error_logger:warning_msg("open-cgf connection error ~p from ~s:~B to CDF ~s:~B TCP - closing", [Reason,
@@ -146,77 +146,16 @@ handle_info({tcp_error, _Socket, Reason}, State) ->
 												    State#state.port,
 												    inet_parse:ntoa(State#state.dest_ip), 
 												    State#state.dest_port]),
-    {stop, tcp_closed, State};
+    {stop, normal, State#state{socket=undefined}};
 
-handle_info({tcp, Socket, Packet}, State) ->
-    SourceKey = {tcp, State#state.dest_ip, State#state.dest_port},
-    case gtpp_decode:decode_message(Packet) of
-     %% {ok,{{gtpp_header,0,0,1,echo_response,2,1},{{count,7},<<>>}}}
-	{ok, {Header, Message}} ->
-	    case Header#gtpp_header.msg_type of
-	        version_not_supported ->
-                    {noreply, State#state{version=Header#gtpp_header.version}};
-		data_record_transfer_request ->
-		    {{Type, _Content}, _} = Message,
-		    case Type of 
-			send_data_record_packet ->
-			    cdr_file_srv:log(SourceKey, Header#gtpp_header.seqnum, Message),
-			    send_data_record_transfer_response(Socket, State#state.version, Header#gtpp_header.seqnum,
-							       request_accepted, [Header#gtpp_header.seqnum]),
-				    
-			    {noreply, State};
-			send_potential_duplicate_record_packet ->
-			    Resp = case cdr_file_srv:check_duplicate(SourceKey, Header#gtpp_header.seqnum) of
-				       false ->
-					   cdr_file_srv:log_possible_dup(SourceKey, Header#gtpp_header.seqnum, Message),
-					   request_accepted;
-				       true ->
-					   error_logger:warning_msg("Duplicate sequence number ~p from ~s:~B",
-								    [Header#gtpp_header.seqnum, 
-								     inet_parse:ntoa(State#state.dest_ip), State#state.dest_port]),   
-					   request_related_to_duplicates_already_fulfilled
-				   end,
-			    send_data_record_transfer_response(Socket, State#state.version, Header#gtpp_header.seqnum,
-							       Resp, [Header#gtpp_header.seqnum]),
-			    {noreply, State};
-			cancel_packets ->
-			    {{cancel_packets, {sequence_numbers, SeqNums}}, _} = Message,
-			    ?PRINTDEBUG2("Cancelling packets with seqnums [~s]",['open-cgf_logger':format_seqnums(SeqNums)]),
-			    cdr_file_srv:remove_possible_dup(SourceKey, Header#gtpp_header.seqnum, SeqNums),
-			    send_data_record_transfer_response(Socket, State#state.version, Header#gtpp_header.seqnum,
-							       request_accepted, [Header#gtpp_header.seqnum]),
-			    {noreply, State};
-			release_packets ->
-			    {{release_packets, {sequence_numbers, SeqNums}}, _} = Message,
-			    ?PRINTDEBUG2("Releasing packets with seqnums [~s]",['open-cgf_logger':format_seqnums(SeqNums)]),
-			    cdr_file_srv:commit_possible_dup(SourceKey, Header#gtpp_header.seqnum, SeqNums),
-			    send_data_record_transfer_response(Socket, State#state.version, Header#gtpp_header.seqnum,
-							       request_accepted, [Header#gtpp_header.seqnum]),
-			    {noreply, State};
-			Other ->
-			    send_data_record_transfer_response(Socket, State#state.version, Header#gtpp_header.seqnum,
-							       invalid_message_format, [Header#gtpp_header.seqnum]),
-	                    error_logger:error_msg("Ignored data transfer request with invalid content ~p",[Other]),
-			    {noreply, State}
-		    end;
-		node_alive_request ->
-		    send_node_alive_response(Socket, State#state.version, Header#gtpp_header.seqnum),
-		    {noreply, State};
-		node_alive_response ->
-		    %% reset timestamp
-		    {noreply, State#state{last_request_ts=0}};
-		redirection_response ->
-		    {noreply, State};
-		echo_request ->
-		    send_echo_response(Socket, State#state.version, Header#gtpp_header.seqnum),
-		    {noreply, State};
-		echo_response ->
-		    {noreply, State#state{last_request_ts=0}}
-	    end;
-	{error, _Reason} ->
-	    %% Send back error of some kind TODO
-	    {noreply, State}
-    end;
+handle_info({tcp, _Socket, Packet}, State) ->
+    ?PRINTDEBUG("Got to handle info with packet"),
+    OldBuf = State#state.buffer,
+    Buffer = <<OldBuf/binary, Packet/binary>>,
+    ?PRINTDEBUG("Got to handle info with packet, appended"),
+    Length = get_lengths(Buffer),
+    ?PRINTDEBUG("Got to handle info with packet, and lengths"),
+    decode(Buffer, Length, State);
 
 handle_info({timeout, {IP,Port}, SeqNum}, State) ->
     error_logger:warning_msg("CDF ~s:~B failed to respond to CGF request ~B, possibly down",[inet_parse:ntoa(IP), Port, SeqNum]),
@@ -238,13 +177,14 @@ handle_info(Info, State) ->
 %%--------------------------------------------------------------------
 terminate(Reason, State) ->
     cdr_file_srv:reset({tcp, State#state.dest_ip, State#state.dest_port}),
-    case Reason of
-	normal ->  
+    case State#state.socket of
+	undefined ->  
+	    ok;
+	_ ->
 	    SeqNum = 'open-cgf_state':get_next_seqnum({tcp, State#state.dest_ip, State#state.dest_port}),	    
 	    send_redirection_request(State#state.socket, State#state.version, SeqNum,
 				    State#state.altCGF),
-	    gen_tcp:close(State#state.socket);
-	_ -> ok  %% assume it is already closed
+	    catch gen_tcp:close(State#state.socket)
     end,
     ok.
 
@@ -288,3 +228,102 @@ send_redirection_request(Socket, Version, SeqNum, AltCGF) ->
  
 greg_now() ->
     calendar:datetime_to_gregorian_seconds({date(), time()}).
+
+get_lengths(Buffer) ->
+    case catch gtpp_decode:decode_GTPP_header(Buffer) of
+	{'EXIT', _} ->
+	    no_header;
+	{H, Rest} ->	
+	    ?PRINTDEBUG2("Got ~p~n,~p",[H,Rest]),
+	    {size(Buffer) - size(Rest), H#gtpp_header.msg_len}
+    end.
+
+
+%%% some parts of the gtp' understanding escape gtpp_decode here. sob. 
+decode(<< >>, no_header, State) ->
+    {noreply, State};
+decode(<<0:3, 0:1, _:3, 0:1, Rest/binary>>, no_header, State) when size(Rest) < 19 ->
+    ?PRINTDEBUG("decode but not enough of a packet yet for a header (20 byte header)"),
+    {noreply, State#state{buffer = <<0:3, 0:1, 0:3, 0:1, Rest/binary >> }};
+decode(Packet, no_header, State) when size(Packet) < 6 ->
+    ?PRINTDEBUG("decode but not enough of a packet yet for a header (6 byte header)"),
+    {noreply, State#state{buffer=Packet}};
+decode(Packet, no_header, State) ->
+    {stop, normal, State}; %% if we have lots of stuff in the buffer, but nothing decodeable, so we should kill the connection and cut our losses
+decode(Packet, {HLen, Length}, State) when size(Packet) < (HLen+Length) -> %% if not enough data yet
+    ?PRINTDEBUG2("decode but not enough of a packet yet - header says ~B bytes required",[Length]),
+    {noreply, State#state{buffer=Packet}};
+
+decode(Packet, {HLen, Length}, State) -> %% if we get here then we might have enough, or multiple packets. Hence we always recurse.
+    ?PRINTDEBUG2("decode header len ~B, body len ~B, packet size ~B",[HLen, Length, size(Packet)]),
+    SourceKey = {tcp, State#state.dest_ip, State#state.dest_port},
+    Total_len = HLen+Length,
+    <<Buffer:Total_len/binary, Remainder/binary>> = Packet,
+    ?PRINTDEBUG("Seperated packet..."),
+    Remainder_len = get_lengths(Remainder),
+    case gtpp_decode:decode_message(Buffer) of
+     %% {ok,{{gtpp_header,0,0,1,echo_response,2,1},[{count,7},<<>>]}}
+	{ok, {Header, Message}} ->
+	    case Header#gtpp_header.msg_type of
+	        version_not_supported ->
+		    decode(Remainder, Remainder_len, State#state{version=Header#gtpp_header.version});
+		data_record_transfer_request ->
+		    {Type, _Content} = hd(Message),
+		    case Type of 
+			send_data_record_packet ->
+			    cdr_file_srv:log(SourceKey, Header#gtpp_header.seqnum, Message),
+			    send_data_record_transfer_response(State#state.socket, State#state.version, Header#gtpp_header.seqnum,
+							       request_accepted, [Header#gtpp_header.seqnum]),
+			    decode(Remainder, Remainder_len, State);			    
+			send_potential_duplicate_record_packet ->
+			    Resp = case cdr_file_srv:check_duplicate(SourceKey, Header#gtpp_header.seqnum) of
+				       false ->
+					   cdr_file_srv:log_possible_dup(SourceKey, Header#gtpp_header.seqnum, Message),
+					   request_accepted;
+				       true ->
+					   error_logger:warning_msg("Duplicate sequence number ~p from ~s:~B",
+								    [Header#gtpp_header.seqnum, 
+								     inet_parse:ntoa(State#state.dest_ip), State#state.dest_port]),   
+					   request_related_to_duplicates_already_fulfilled
+				   end,
+			    send_data_record_transfer_response(State#state.socket, State#state.version, Header#gtpp_header.seqnum,
+							       Resp, [Header#gtpp_header.seqnum]),
+			    decode(Remainder, Remainder_len, State);
+			cancel_packets ->
+			    {cancel_packets, {sequence_numbers, SeqNums}} = hd(Message),
+			    ?PRINTDEBUG2("Cancelling packets with seqnums [~s]",['open-cgf_logger':format_seqnums(SeqNums)]),
+			    cdr_file_srv:remove_possible_dup(SourceKey, Header#gtpp_header.seqnum, SeqNums),
+			    send_data_record_transfer_response(State#state.socket, State#state.version, Header#gtpp_header.seqnum,
+							       request_accepted, [Header#gtpp_header.seqnum]),
+			    decode(Remainder, Remainder_len, State);
+			release_packets ->
+			    {release_packets, {sequence_numbers, SeqNums}} = hd(Message),
+			    ?PRINTDEBUG2("Releasing packets with seqnums [~s]",['open-cgf_logger':format_seqnums(SeqNums)]),
+			    cdr_file_srv:commit_possible_dup(SourceKey, Header#gtpp_header.seqnum, SeqNums),
+			    send_data_record_transfer_response(State#state.socket, State#state.version, Header#gtpp_header.seqnum,
+							       request_accepted, [Header#gtpp_header.seqnum]),
+			    decode(Remainder, Remainder_len, State);
+			Other ->
+			    send_data_record_transfer_response(State#state.socket, State#state.version, Header#gtpp_header.seqnum,
+							       invalid_message_format, [Header#gtpp_header.seqnum]),
+	                    error_logger:error_msg("Ignored data transfer request with invalid content ~p",[Other]),
+			    decode(Remainder, Remainder_len, State)
+		    end;
+		node_alive_request ->
+		    send_node_alive_response(State#state.socket, State#state.version, Header#gtpp_header.seqnum),
+		    decode(Remainder, Remainder_len, State);
+		node_alive_response ->
+		    %% reset timestamp
+		    decode(Remainder, Remainder_len, State#state{last_request_ts=0});
+		redirection_response ->
+		    decode(Remainder, Remainder_len, State);
+		echo_request ->
+		    send_echo_response(State#state.socket, State#state.version, Header#gtpp_header.seqnum),
+		    decode(Remainder, Remainder_len, State);
+		echo_response ->
+		    decode(Remainder, Remainder_len, State#state{last_request_ts=0})
+	    end;
+	{error, _Reason} ->
+	    %% Send back error of some kind TODO
+	    decode(Remainder, Remainder_len, State)
+    end.

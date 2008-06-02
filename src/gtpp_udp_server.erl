@@ -118,7 +118,7 @@ handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
 	        version_not_supported ->
                     {noreply, State#state{version=Header#gtpp_header.version}};
 		data_record_transfer_request ->
-		    {{Type, _Content}, _} = Message,
+		    {Type, _Content} = hd(Message),
 		    case Type of 
 			send_data_record_packet ->
 			    cdr_file_srv:log({udp, InIP, InPort}, Header#gtpp_header.seqnum, Message),
@@ -142,7 +142,7 @@ handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
 							       Resp, [Header#gtpp_header.seqnum]),
 			    {noreply, State};
 			cancel_packets ->
-			    {{cancel_packets, {sequence_numbers, SeqNums}}, _} = Message,
+			    {cancel_packets, {sequence_numbers, SeqNums}} = hd(Message),
 			    ?PRINTDEBUG2("Cancelling packets with seqnums [~s]",['open-cgf_logger':format_seqnums(SeqNums)]),
 			    cdr_file_srv:remove_possible_dup({udp, InIP, InPort}, Header#gtpp_header.seqnum, SeqNums),
 			    send_data_record_transfer_response(InSocket, State#state.version, Header#gtpp_header.seqnum,
@@ -150,7 +150,7 @@ handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
 							       request_accepted, [Header#gtpp_header.seqnum]),
 			    {noreply, State};
 			release_packets ->
-			    {{release_packets, {sequence_numbers, SeqNums}}, _} = Message,
+			    {release_packets, {sequence_numbers, SeqNums}} = (Message),
 			    ?PRINTDEBUG2("Releasing packets with seqnums [~s]",['open-cgf_logger':format_seqnums(SeqNums)]),
 			    cdr_file_srv:commit_possible_dup({udp, InIP, InPort}, Header#gtpp_header.seqnum, SeqNums),
 			    send_data_record_transfer_response(InSocket, State#state.version, Header#gtpp_header.seqnum,
@@ -179,7 +179,7 @@ handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
 		    {noreply, State};
 		echo_response ->
 		    NewOutstanding = reliable_ack({InIP, InPort}, Header#gtpp_header.seqnum, State#state.outstanding_requests),
-		    {{count, NewCount}, _} = Message,
+		    {count, NewCount} = hd(Message),
 		    case orddict:find({udp, InIP, InPort}, State#state.known_sources) of
 			{ok, NewCount} ->
 			    {noreply, State#state{outstanding_requests=NewOutstanding}}; %% endpoint is known and has not restarted

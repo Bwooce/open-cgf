@@ -207,8 +207,7 @@ handle_cast({reset, SourceKey}, State) ->
     %% write all the CDRs, close the files
     S = get_source(SourceKey, State),
     Pid = spawn_link(?MODULE, log_duplicate_cdr, [S, State]), 
-    close_cdr_file(S#source.cdr_file_handle, S#source.cdr_timer),
-    ok = file:rename(S#source.cdr_file_name, S#source.cdr_final_file_name),
+    close_cdr_file(S),
     NewS = S#source{cdr_file_handle=undefined,
 		    cdr_timer=undefined,
 		    cdr_file_name=[],
@@ -285,11 +284,11 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 %%% Internal functions
 %%--------------------------------------------------------------------
-write_cdr(_SourceKey, _Seq_num, {{_,[]},_}, State) ->
+write_cdr(_SourceKey, _Seq_num, [{_,[]}|_], State) ->
     ?PRINTDEBUG("Write CDR with no CDR"),
     {ok, State};
 
-write_cdr(SourceKey, Seq_num, {{_,Data},_}, State) ->
+write_cdr(SourceKey, Seq_num, [{_,Data}|_], State) ->
     ?PRINTDEBUG2("Writing CDR for ~p, seqnum ~B",[SourceKey, Seq_num]),
     S = get_source(SourceKey, State),
     NewState = write_cdr_source(S, Seq_num, Data, State),
@@ -454,10 +453,17 @@ flush_duplicates_timer(State) ->
 		  end, State#state.known_sources).
     
 
-pretty_format_address({_, {IP1,IP2,IP3,IP4},Port}) ->
+pretty_format_address({udp, {IP1,IP2,IP3,IP4},Port}) ->
     io_lib:format("~B_~B_~B_~B-~B",[IP1, IP2, IP3, IP4, Port]);
-pretty_format_address({_, {IP1,IP2,IP3,IP4,IP5,IP6,IP7,IP8},Port}) ->
-    io_lib:format("~B_~B_~B_~B_~B_~B_~B_~B-~B",[IP1, IP2, IP3, IP4, IP5, IP6, IP7, IP8, Port]).
+pretty_format_address({udp, {IP1,IP2,IP3,IP4,IP5,IP6,IP7,IP8},Port}) ->
+    io_lib:format("~B_~B_~B_~B_~B_~B_~B_~B-~B",[IP1, IP2, IP3, IP4, IP5, IP6, IP7, IP8, Port]);
+%% TCP uses ephemeral ports, and we don't have any other identifier...
+pretty_format_address({tcp, {IP1,IP2,IP3,IP4},Port}) ->
+    io_lib:format("~B_~B_~B_~B-tcp",[IP1, IP2, IP3, IP4]);
+pretty_format_address({tcp, {IP1,IP2,IP3,IP4,IP5,IP6,IP7,IP8},Port}) ->
+    io_lib:format("~B_~B_~B_~B_~B_~B_~B_~B-tcp",[IP1, IP2, IP3, IP4, IP5, IP6, IP7, IP8]).
+
+    
 
 
 %% inefficient replacement for keystore from R12B. We will remove this in a few releases and return to lists:keystore.
@@ -481,8 +487,7 @@ execute_post_close_command(Command, Filename) ->
 
 close_source(S, State) ->       
     ?PRINTDEBUG2("Closing cdr file for ~p",[S#source.address]),
-    ok = close_cdr_file(S#source.cdr_file_handle, S#source.cdr_timer),
-    ok = file:rename(S#source.cdr_file_name, S#source.cdr_final_file_name),
+    ok = close_cdr_file(S),
     execute_post_close_command(State#state.post_close_command, S#source.cdr_final_file_name),
     NewS = S#source{cdr_file_handle=undefined,
 		    cdr_timer=undefined,
@@ -492,11 +497,12 @@ close_source(S, State) ->
 		    cdr_file_count=0},
     State#state{known_sources=keystore(S#source.address, 2, State#state.known_sources, NewS)}.
 
-close_cdr_file(undefined, _) ->
+close_cdr_file(S) when S#source.cdr_file_handle =:= undefined ->
     ok;
-close_cdr_file(Handle, TID) ->
-    timer:cancel(TID),
-    ok = file:close(Handle).
+close_cdr_file(S) ->
+    timer:cancel(S#source.cdr_timer),
+    ok = file:close(S#source.cdr_file_handle),
+    ok = file:rename(S#source.cdr_file_name, S#source.cdr_final_file_name).
 
 
 check_file_count(Source, State) ->
