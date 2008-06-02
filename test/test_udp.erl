@@ -31,7 +31,7 @@
 -define(MAXATTEMPTS, 3).
 
 simple_test(Origin, Dest) ->
-    common_setup(tcp, Origin),
+    common_setup(udp, Origin),
     test_client:auto_respond(true),
     test_client:open(Dest),
     test_client:expect('_'),
