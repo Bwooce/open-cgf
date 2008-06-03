@@ -74,7 +74,7 @@ init([]) ->
 							    [inet_parse:ntoa(DestIP), DestPort]),
 				      {ok, ERPid, ERSeq} = send_echo_request(Socket, Version, {DestIP,DestPort}, T3Response, N3Requests),
 				      {ok, NAPid, NASeq} = send_node_alive_request(Socket, Version, {DestIP, DestPort}, IP, T3Response, N3Requests),
-				      Acc ++ [{NAPid, NASeq}, {ERPid, ERSeq}]
+				      Acc ++ [{{DestIP, DestPort, NASeq}, NAPid}, {{DestIP, DestPort, ERSeq},ERPid}]
 			      end, [], CDFs),			  
     process_flag(trap_exit, true),
     {ok, #state{socket=Socket, ip=IP, port=Port, version=Version, known_sources=orddict:new(), altCGF=AltCGF, 
@@ -112,7 +112,7 @@ handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
     ?PRINTDEBUG2("Got Message ~p from ~s:~p", [Packet, inet_parse:ntoa(InIP), InPort]),
     %% decode the header, {InIP, Port, SeqNum} forms a unique tuple. I think. How ugly.
     case gtpp_decode:decode_message(Packet) of
-     %% {ok,{{gtpp_header,0,0,1,echo_response,2,1},{{count,7},<<>>}}}
+     %% {ok,{{gtpp_header,0,0,1,echo_response,2,1},[{count,7},<<>>}]}
 	{ok, {Header, Message}} ->
 	    case Header#gtpp_header.msg_type of
 	        version_not_supported ->
@@ -291,11 +291,13 @@ send_udp(OwnerPid, Socket, {IP,Port}, SeqNum, Msg, Timeout, MaxAttempts) ->
 	    send_udp(OwnerPid, Socket, {IP,Port}, SeqNum, Msg, Timeout*2, MaxAttempts-1) %% back off on send
     end.
 
-reliable_ack(Src, SeqNum, List) ->
-   case lists:member({Src, SeqNum}, List) of
-	{value, Pid} -> 
-	   Pid ! ack,
-	   lists:delete({Src, SeqNum}, List);
-	_ -> ok
+reliable_ack({IP, Port}, SeqNum, List) ->
+   case lists:keytake({IP, Port, SeqNum}, 1, List) of
+	{value, {_, Pid}, NewList} -> 
+	    Pid ! ack,
+	    NewList;	
+	_ -> 
+	    ?PRINTDEBUG2("ack recv but no request found, ~p:~p ~p",[IP,Port,SeqNum]),
+	    List
    end.
  
