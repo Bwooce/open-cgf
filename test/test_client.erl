@@ -132,7 +132,7 @@ handle_call({close}, _First, State) ->
 	tcp ->
 	    State#state.tcp_pid ! {self(), diediedie};
 	udp ->
-	    ok
+	    test_udp_client:close()
     end,
     {reply, ok, State#state{tcp_pid=undefined, dest=undefined, sent_queue=[], expected_queue=[]}};
 
@@ -168,14 +168,17 @@ handle_info({Proto, Pid, Message}, State) ->
 	    {Header, Body} = Message,
 	    case Header#gtpp_header.msg_type of 
 		echo_request ->
+		    ?PRINTDEBUG("***Got echo_request - autoresponding"),
 		    Msg = gtpp_encode:echo_response(Header#gtpp_header.version, Header#gtpp_header.seqnum, 0, << >>),
 		    test_client_send(Msg, State),
 		    {noreply, State};
 		node_alive_request ->
+		    ?PRINTDEBUG("***Got node_alive_request - autoresponding"),
 		    Msg = gtpp_encode:node_alive_response(Header#gtpp_header.version, Header#gtpp_header.seqnum, << >>),
 		    test_client_send(Msg, State),
 		    {noreply, State};
 		redirection_request ->
+		    ?PRINTDEBUG("***Got redirection_request - autoresponding"),
 		    Msg = gtpp_encode:redirection_response(Header#gtpp_header.version, Header#gtpp_header.seqnum),
 		    test_client_send(Msg, State),
 		    {noreply, State};

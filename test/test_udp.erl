@@ -36,6 +36,12 @@ simple_test(Origin, Dest) ->
     test_client:open(Dest),
     test_client:expect('_'),
     test_client:send(gtpp_encode:echo_request(0, next_seqnum(), << >>)),
+    receive
+	ok_ ->
+	    ok
+    after 10000 ->
+	    ok
+    end,
     test_client:expect({'_',[{cause, response, 128},{sequence_numbers,[cur_seqnum()]},'_']}), %% requires some refinement...
     test_client:send(dummy_cdr(0,next_seqnum())),
     test_client:expect({'_',[{cause, response, 128},{sequence_numbers,[cur_seqnum()]},'_']}), %% requires some refinement...
@@ -49,6 +55,7 @@ simple_test(Origin, Dest) ->
     test_client:close().
 
 common_setup(Proto, Origin) ->
+    ?PRINTDEBUG2("Opening port for ~p",[Origin]),
     test_client:start_link(Proto, Origin),
     ets:new(test_udp, [set, named_table, private]),
     ets:insert(test_udp, {seqnum, 65500}), %% let's test rollover while we are here
@@ -144,7 +151,8 @@ ggsn_cdr_fixed() ->
 
      
 start_mockup(Address) -> %% Address is {IP,Port}, IP is {aa,bb,cc,dd}
-    {ok, Socket} = gen_udp:open(3385, [binary]),
+%%    {ok, Socket} = gen_udp:open(3385, [binary]),
+    Socket = undefined,
 %%    Address = {{65,23,156,215}, 3386},
     Version = 0,
     ets:new(test, [set, named_table, private]),

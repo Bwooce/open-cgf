@@ -169,6 +169,7 @@ handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
 					     {InIP, InPort}),
 		    {noreply, State};
 		node_alive_response ->
+		    ?PRINTDEBUG("********************Got NodeAlive response"),
 		    NewOutstanding = reliable_ack({InIP, InPort}, Header#gtpp_header.seqnum, State#state.outstanding_requests),
 		    {noreply, State#state{outstanding_requests=NewOutstanding}};
 		redirection_response ->
@@ -178,6 +179,7 @@ handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
 				       {InIP, InPort}),
 		    {noreply, State};
 		echo_response ->
+		    ?PRINTDEBUG("*******************Got Echo response"),
 		    NewOutstanding = reliable_ack({InIP, InPort}, Header#gtpp_header.seqnum, State#state.outstanding_requests),
 		    {count, NewCount} = hd(Message),
 		    case orddict:find({udp, InIP, InPort}, State#state.known_sources) of

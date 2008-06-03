@@ -12,7 +12,7 @@
 -include("open-cgf.hrl").
 
 %% API
--export([start_link/2, send/2, register/1]).
+-export([start_link/2, send/2, register/1, close/0]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -39,6 +39,9 @@ register(Pid) ->
 %% send a message (once, dumb impl)
 send(Dest, Msg) ->
     gen_server:call(?SERVER, {send, Dest, Msg}).
+
+close() ->
+    gen_server:call(?SERVER, {close}).
 
 %%====================================================================
 %% gen_server callbacks
@@ -71,6 +74,9 @@ handle_call({register, Pid}, _From, State) ->
 handle_call({send, {IP,Port}, Msg}, _From, State) ->
     Reply = gen_udp:send(State#state.socket, IP, Port, Msg),
     {reply, Reply, State};
+
+handle_call({close}, _From, State) ->
+    {stop, normal, State};
 
 handle_call(_Request, _From, State) ->
     Reply = ok,
