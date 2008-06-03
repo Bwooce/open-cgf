@@ -168,7 +168,7 @@ handle_info({Proto, Pid, Message}, State) ->
 	    {Header, Body} = Message,
 	    case Header#gtpp_header.msg_type of 
 		echo_request ->
-		    Msg = gtpp_encode:echo_response(Header#gtpp_header.version, Header#gtpp_header.seqnum, << >>),
+		    Msg = gtpp_encode:echo_response(Header#gtpp_header.version, Header#gtpp_header.seqnum, 0, << >>),
 		    test_client_send(Msg, State),
 		    {noreply, State};
 		node_alive_request ->
