@@ -35,21 +35,25 @@ simple_test(Origin, Dest) ->
     common_setup(udp, Origin),
     test_client:auto_respond(true),
     test_client:open(Dest),
-    test_client:expect({simple_header(next_seqnum(), echo_response),'_'}),
-    ?PRINTDEBUG2("curr seqnum ~p",[cur_seqnum()]),
-    test_client:send(gtpp_encode:echo_request(0, cur_seqnum(), << >>)),
+    error_logger:info_msg("Start open-cgf now, within 10s"),
     receive
 	ok_ ->
 	    ok
     after 10000 ->
 	    ok
     end,
-    test_client:expect({'_',[{cause, response, 128},{sequence_numbers,[next_seqnum()]},'_']}), %% requires some refinement...
+    test_client:expect({simple_header(next_seqnum(), echo_response),'_'}),
+    test_client:send(gtpp_encode:echo_request(0, cur_seqnum(), << >>)),
+    step(),
+    test_client:expect({simple_header(next_seqnum(), data_record_transfer_response),[{cause, response, 128},{sequence_numbers,[cur_seqnum()]},'_']}), 
     test_client:send(dummy_cdr(0,cur_seqnum())),
+    step(),
     test_client:expect({'_',[{cause, response, 128},{sequence_numbers,[next_seqnum()]},'_']}), %% requires some refinement...
     test_client:send(unknown_cdr_seqnum(cur_seqnum())),
+    step(),
     test_client:expect({'_',[{cause, response, 128},{sequence_numbers,'_'},'_']}), %% requires some refinement...
     test_client:send(ggsn_cdr_fixed()),
+    step(),
     common_shutdown(), %% even if the test fails
     test_client:wait_for_all_expected(10),
     ?PRINTDEBUG("Sent all, waiting for all messages"),
@@ -73,6 +77,9 @@ next_seqnum() ->
 cur_seqnum() ->
     [{seqnum, SeqNum}] = ets:lookup(test_udp, seqnum),
     SeqNum.
+
+step() ->
+    timer:sleep(500).
 
 simple_header(Seqnum, Type) ->
     #gtpp_header{version='_',
