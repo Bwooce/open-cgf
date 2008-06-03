@@ -24,6 +24,7 @@
 -module(test_udp).
 
 -include("open-cgf.hrl").
+-include("gtp.hrl").
 
 -export([simple_test/2]).
 
@@ -34,18 +35,19 @@ simple_test(Origin, Dest) ->
     common_setup(udp, Origin),
     test_client:auto_respond(true),
     test_client:open(Dest),
-    test_client:expect('_'),
-    test_client:send(gtpp_encode:echo_request(0, next_seqnum(), << >>)),
+    test_client:expect({simple_header(next_seqnum(), echo_response),'_'}),
+    ?PRINTDEBUG2("curr seqnum ~p",[cur_seqnum()]),
+    test_client:send(gtpp_encode:echo_request(0, cur_seqnum(), << >>)),
     receive
 	ok_ ->
 	    ok
     after 10000 ->
 	    ok
     end,
-    test_client:expect({'_',[{cause, response, 128},{sequence_numbers,[cur_seqnum()]},'_']}), %% requires some refinement...
-    test_client:send(dummy_cdr(0,next_seqnum())),
-    test_client:expect({'_',[{cause, response, 128},{sequence_numbers,[cur_seqnum()]},'_']}), %% requires some refinement...
-    test_client:send(unknown_cdr_seqnum(next_seqnum())),
+    test_client:expect({'_',[{cause, response, 128},{sequence_numbers,[next_seqnum()]},'_']}), %% requires some refinement...
+    test_client:send(dummy_cdr(0,cur_seqnum())),
+    test_client:expect({'_',[{cause, response, 128},{sequence_numbers,[next_seqnum()]},'_']}), %% requires some refinement...
+    test_client:send(unknown_cdr_seqnum(cur_seqnum())),
     test_client:expect({'_',[{cause, response, 128},{sequence_numbers,'_'},'_']}), %% requires some refinement...
     test_client:send(ggsn_cdr_fixed()),
     common_shutdown(), %% even if the test fails
@@ -69,7 +71,17 @@ next_seqnum() ->
     ets:update_counter(test_udp, seqnum, {2,1,65535,0}).
 
 cur_seqnum() ->
-    [ets:lookup(test_udp, seqnum)].
+    [{seqnum, SeqNum}] = ets:lookup(test_udp, seqnum),
+    SeqNum.
+
+simple_header(Seqnum, Type) ->
+    #gtpp_header{version='_',
+		 pt='_',
+		 modern_header='_',
+		 msg_type=Type,
+		 msg_len='_',
+		 seqnum=Seqnum
+		}.
 
 dummy_cdr(Version, SeqNum) ->
     DP = gtpp_encode:ie_data_record_packet(["TEST CDR-"++integer_to_list(SeqNum),"TEST CDR2...-"++integer_to_list(SeqNum)], {1,1,1}, << >>),

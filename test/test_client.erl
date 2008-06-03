@@ -242,8 +242,9 @@ find_match(_Message, [], Output) ->
     Output;
 find_match(Message, [Pattern|Rest], Output) ->
     case ets:test_ms(Message, [{Pattern,[],['$_']}]) of
-	{ok, _} ->  
-	    ?PRINTDEBUG("***Matched***"),
+	{ok, false} -> find_match(Message, Rest, Output ++ [Pattern]);
+	{ok, Match} ->  
+	    ?PRINTDEBUG2("***Matched*** ~p",[Match]),
 	    Output ++ Rest; %% delete the pattern we just matched
 	_ -> find_match(Message, Rest, Output ++ [Pattern])
     end.
