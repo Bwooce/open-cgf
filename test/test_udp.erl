@@ -26,10 +26,12 @@
 -include("open-cgf.hrl").
 -include("gtp.hrl").
 
--export([simple_test/2]).
+-export([simple_test/2,complex_test/2]).
 
 -define(TIMEOUT, 60*1000).
 -define(MAXATTEMPTS, 3).
+
+%%%% TEST 1
 
 simple_test(Origin, Dest) ->
     common_setup(udp, Origin),
@@ -60,6 +62,55 @@ simple_test(Origin, Dest) ->
     timer:sleep(2000),
     test_client:close().
 
+%%%% TEST 2
+
+complex_test(Origin, Dest) ->
+    Version = 2,
+    common_setup(udp, Origin),
+    test_client:auto_respond(true),
+    test_client:open(Dest),
+    error_logger:info_msg("Start open-cgf now, within 10s"),
+    receive
+	ok_ ->
+	    ok
+    after 10000 ->
+	    ok
+    end,
+    %% Send echo request
+    test_client:expect({simple_header(next_seqnum(), echo_response),'_'}),
+    test_client:send(gtpp_encode:echo_request(Version, cur_seqnum(), << >>)),
+    step(),
+    %% send pot_dup CDRs (50)
+    BeforeSeqNum=cur_seqnum()+1,
+    send_dup_cdrs(Version, 50),
+    AfterSeqNum=cur_seqnum(),
+    step(),
+    %% send simple CDR #1
+    test_client:expect({simple_header(next_seqnum(), data_record_transfer_response),[{cause, response, 128},{sequence_numbers,[cur_seqnum()]},'_']}), 
+    test_client:send(dummy_cdr(Version,cur_seqnum())),
+    step(),
+    %% send simple CDR #2
+    test_client:expect({simple_header(next_seqnum(), data_record_transfer_response),[{cause, response, 128},{sequence_numbers,[cur_seqnum()]},'_']}), 
+    test_client:send(dummy_cdr(Version,cur_seqnum())),
+    step(),
+    %% cancel some of the outstanding CDRs (pretend we got Ack's from another CGF for these ones)
+    SeqNums1 = lists:seq(BeforeSeqNum, AfterSeqNum-25),
+    test_client:expect({simple_header(next_seqnum(), data_record_transfer_response),[{cause, response, 128},{sequence_numbers,[SeqNums1]},'_']}), 
+    test_client:send(gtpp_encode:data_record_transfer_request(Version, cur_seqnum(), cancel_packets, SeqNums1, << >>)),
+    step(),
+    %% release the rest of the outstanding CDRs (pretend we got nothing from another CGF in response to our empty packet)
+    SeqNums2 = lists:seq(BeforeSeqNum+25, AfterSeqNum),
+    test_client:expect({simple_header(next_seqnum(), data_record_transfer_response),[{cause, response, 128},{sequence_numbers,[SeqNums2]},'_']}), 
+    test_client:send(gtpp_encode:data_record_transfer_request(Version, cur_seqnum(), cancel_packets, SeqNums2, << >>)),
+    step(),
+    common_shutdown(), %% even if the test fails
+    test_client:wait_for_all_expected(10),
+    ?PRINTDEBUG("Sent all, waiting for all messages"),
+    timer:sleep(2000),
+    test_client:close().
+
+
+%%%% COMMON FUNCTIONS
 common_setup(Proto, Origin) ->
     ?PRINTDEBUG2("Opening port for ~p",[Origin]),
     test_client:start_link(Proto, Origin),
@@ -90,9 +141,22 @@ simple_header(Seqnum, Type) ->
 		 seqnum=Seqnum
 		}.
 
+send_dup_cdrs(_Version, 0) ->
+    ok;
+send_dup_cdrs(Version, Count) ->
+    test_client:expect({simple_header(next_seqnum(), data_record_transfer_response),[{cause, response, 128},{sequence_numbers,[cur_seqnum()]},'_']}), 
+    test_client:send(dup_cdr(Version,cur_seqnum())),
+    send_dup_cdrs(Version, Count-1).
+
 dummy_cdr(Version, SeqNum) ->
     DP = gtpp_encode:ie_data_record_packet(["TEST CDR-"++integer_to_list(SeqNum),"TEST CDR2...-"++integer_to_list(SeqNum)], {1,1,1}, << >>),
     DRTR = gtpp_encode:data_record_transfer_request(Version, SeqNum, data_record_packet, DP, << >>),
+    DRTR.
+
+dup_cdr(Version, SeqNum) ->
+    DP = gtpp_encode:ie_data_record_packet(["TEST CDR-POTENTIAL_DUP-A-"++integer_to_list(SeqNum),
+					    "TEST CDR-POTENTIAL_DUP-B...-"++integer_to_list(SeqNum)], {1,1,1}, << >>),
+    DRTR = gtpp_encode:data_record_transfer_request(Version, SeqNum, send_potential_duplicate_data_record_packet, DP, << >>),
     DRTR.
 
 unknown_cdr_seqnum(SeqNum) ->
@@ -179,7 +243,7 @@ start_mockup(Address) -> %% Address is {IP,Port}, IP is {aa,bb,cc,dd}
     %% send 50 packets
     %send_cdrs(Socket, Address, Version, 50),
     %% send 50 possible_dups
-    send_dup_cdrs(Socket, Address, Version, 50),
+    send_dup_cdr(Socket, Address, Version, 50),
     %% cancel 25 possible_dups
     SkipSeqNum = next_seqnum(), %% get current, plus a test to ensure a missing seqnum doesn't hurt
     send_cancel_cdr(Socket, Address, Version, next_seqnum(), lists:seq(SkipSeqNum-51, SkipSeqNum-26)),
@@ -294,11 +358,7 @@ send_empty_cdr(Socket, {DestIP, DestPort}, Version, SeqNum) ->
     DRTR = gtpp_encode:data_record_transfer_request(Version, SeqNum, data_record_packet, DP, << >>),
     send_reliably(Socket, {DestIP, DestPort}, SeqNum, DRTR, ?TIMEOUT, ?MAXATTEMPTS).
 
-send_dup_cdrs(_Socket, _Address, _Version, 0) ->
-    ok;
-send_dup_cdrs(Socket, Address, Version, Count) ->
-    send_dup_cdr(Socket, Address, Version, next_seqnum()),
-    send_dup_cdrs(Socket, Address, Version, Count-1).
+
 
 send_dup_cdr(Socket, {DestIP, DestPort}, Version, SeqNum) ->
     DP = gtpp_encode:ie_data_record_packet(["TEST CDR-POTENTIAL_DUP-A-"++integer_to_list(SeqNum),
