@@ -1,6 +1,6 @@
 %% IP addresses can be in "127.0.0.1" OR {127,0,0,1} format. Or IPv6 "00::" format.
 [{'open-cgf',[
-   {tcp_server, false},                   %% start a TCP server? NOT YET SUPPORTED
+   {tcp_server, false},                   %% start a TCP server?
    {max_restarts, 10},                    %% Maximum allowed process crash frequency within the last 30s. More restarts than this will cause app failure
 %   {gtpp_version, 2},		           %% GTP' version to use to start (0-2). Defaults to 2.
    {listen, {{65,23,156,215},3386}},       %% which interface/port to listen on
