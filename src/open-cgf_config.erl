@@ -106,7 +106,11 @@ validate_item(bool, Value) ->
 validate_item({integer, Min, Max}, Value) when is_integer(Value), Value >= Min, Value =< Max ->
     {ok, Value};
 validate_item({integer, Min, Max}, Value) ->
-    {error, lists:flatten(io_lib:format("integer value must be between ~B and ~B, not ~p",[Min, Max, Value]))}.
+    {error, lists:flatten(io_lib:format("integer value must be between ~B and ~B, not ~p",[Min, Max, Value]))};
+validate_item({string, Min, Max}, Value) when is_list(Value), length(Value) >= Min, length(Value) =< Max ->
+    {ok, Value};
+validate_item({string, Min, Max}, Value) ->
+    {error, lists:flatten(io_lib:format("string value must be between ~B and ~B, not ~p",[Min, Max, length(Value)]))}.
 
 parse_IP_port({IP,Port}) when Port >=0, Port < 65536 ->
     case parse_IP_address(IP) of 

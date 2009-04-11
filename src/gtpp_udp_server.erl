@@ -299,7 +299,7 @@ reliable_ack({IP, Port}, SeqNum, List) ->
 	    Pid ! ack,
 	    NewList;	
 	_ -> 
-	    ?PRINTDEBUG2("ack recv but no request found, ~p:~p ~p",[IP,Port,SeqNum]),
+	    ?PRINTDEBUG2("ack recvd but no request found, ~p:~p ~p",[IP,Port,SeqNum]),
 	    List
    end.
  

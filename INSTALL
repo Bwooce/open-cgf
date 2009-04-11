@@ -6,7 +6,8 @@ Steps to install.
 0. Install Erlang, using packages from http://www.erlang.org or your distribution's package manager.
 1. Untar or use subversion to get latest software.
 2. Type 'make debug' in the ./src directory
-3. Edit the configuration file in the ./etc directory to suit your local environment. 
+3. Copy the example configuration files e.g. cp ./etc/open-cgf.config.original ./etc/open-cgf.config
+4. Edit the configuration file (./etc/open-cgf.config) to suit your local environment. 
      Commented-out (%%) options have a default, so leave them commented out until you have the system running...
 
 You are now ready to run open-cgf. 

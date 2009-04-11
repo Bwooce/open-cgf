@@ -47,7 +47,10 @@
 	        file_record_limit,
 		file_age_limit_seconds,
 		possible_duplicate_limit_seconds,
-		post_close_command
+		post_close_command,
+		template,
+		pd_suffix,
+		hostname
 	       }).
 
 -record(source, {address, %% {IP,Port} of sending CDF
@@ -75,7 +78,7 @@ check_duplicate(SourceKey, Seq_num) ->
     gen_server:call(?SERVER, {check_duplicate, SourceKey,Seq_num}).
 
 log(Source, Seq_num, Data) -> 
-    gen_server:cast(?SERVER, {log, Source, Seq_num, Data}).
+    gen_server:call(?SERVER, {log, Source, Seq_num, Data}).
 
 log_possible_dup(SourceKey, Seq_num, Data) ->
     gen_server:cast(?SERVER, {log_possible_dup, SourceKey, Seq_num, Data}).
@@ -113,6 +116,11 @@ init([]) ->
     {ok, CDR_file_age_limit} = 'open-cgf_config':get_item({'open-cgf', cdr_file_age_limit_seconds}, {integer, 1, 3600}, 60), 
     {ok, CDR_duplicate_limit} = 'open-cgf_config':get_item({'open-cgf', cdr_possible_duplicate_limit_seconds}, {integer, 1, 3600}, 60), 
     {ok, CDR_close_command} = 'open-cgf_config':get_item({'open-cgf', cdr_post_close_command}, none, none), %% validation TODO
+    {ok, CDR_template} = 'open-cgf_config':get_item({'open-cgf', cdr_filename_template}, {string, 1, 100},
+						    "CDR-%hostname%-%gsn_ip_port%-%utc_datetime%.asn1"), 
+    {ok, CDR_PD_suffix} = 'open-cgf_config':get_item({'open-cgf', cdr_dup_filename_suffix}, {string, 1, 100}, 
+						     ".potential_duplicate"), 
+    {ok,HN} = inet:gethostname(),
     %% set the callback timer to close files after time limit is up
     I2 = trunc((CDR_duplicate_limit*1000)/2),
     {ok, _} = timer:send_interval(I2, {close_duplicates_tick}),
@@ -120,7 +128,10 @@ init([]) ->
     {ok, #state{known_sources=[], cdr_dir=CDR_dir, cdr_temp_dir=CDR_temp_dir,
 	        file_record_limit=CDR_file_record_limit, file_age_limit_seconds=CDR_file_age_limit,
 	        possible_duplicate_limit_seconds = CDR_duplicate_limit,
-	        post_close_command=CDR_close_command}}.
+	        post_close_command=CDR_close_command,
+		template=CDR_template,
+		pd_suffix=CDR_PD_suffix,
+		hostname=HN}}.
 
 %%--------------------------------------------------------------------
 %% Function: %% handle_call(Request, From, State) -> {reply, Reply, State} |
