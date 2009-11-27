@@ -60,11 +60,11 @@ debug(Msg, Args) ->
     log(debug(), Msg, Args).
     
 
-log(Level,Msg,Args) when integer(Level),list(Msg),list(Args) ->
+log(Level,Msg,Args) when is_integer(Level),is_list(Msg),is_list(Args) ->
     error_logger:error_report(syslog, {{?WHO,Level},{Msg,Args}}).
 
-log(Who,Facility,Level,Msg,Args) when atom(Who),integer(Facility),
-                                      integer(Level),list(Msg),list(Args) ->
+log(Who,Facility,Level,Msg,Args) when is_atom(Who),is_integer(Facility),
+                                      is_integer(Level),is_list(Msg),is_list(Args) ->
     error_logger:error_report(syslog, {{Who,Facility,Level},{Msg,Args}}).
 
 %% Convenient routines for specifying levels.
@@ -175,13 +175,13 @@ handle_event({info_msg,_GLPid,{_Pid, Format, Data}},State) ->
 
 %handle_event({_Type,_GLPid,{_Pid, progress, _Report}},State) -> %% we don't log progress reports
 %    {ok, State};
-handle_event({error_report,_GLPid,{_Pid, Type, Report}},State) when atom(Type) ->
+handle_event({error_report,_GLPid,{_Pid, Type, Report}},State) when is_atom(Type) ->
     handle_event({error_report,none,{none, syslog, {{?WHO,error()},{"~p: ~p", [Type, Report]}}}},State),
     {ok,State};
-handle_event({warning_report,_GLPid,{_Pid, Type, Report}},State) when atom(Type) ->
+handle_event({warning_report,_GLPid,{_Pid, Type, Report}},State) when is_atom(Type) ->
     handle_event({error_report,none,{none, syslog, {{?WHO,warning()},{"~p: ~p", [Type, Report]}}}},State),
     {ok,State};
-handle_event({info_report,_GLPid,{_Pid, Type, Report}},State) when atom(Type) ->
+handle_event({info_report,_GLPid,{_Pid, Type, Report}},State) when is_atom(Type) ->
     handle_event({error_report,none,{none, syslog, {{?WHO,info()},{"~p: ~p", [Type, Report]}}}},State),
     {ok,State};
 %% ignore other events, such as progress events.
