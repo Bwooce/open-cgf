@@ -197,7 +197,8 @@ handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
 						  outstanding_requests=NewOutstanding}}
 		    end
 	    end;
-	{error, _Reason} ->
+	{error, Reason} ->
+	    error_logger:warning_msg("CDF ~s:~B sent message that could not be decoded and was therefore ignored, messgae ~p, decode failure reason ~p", [inet_parse:ntoa(InIP), InPort, Packet, Reason]),
 	    %% Send back error of some kind TODO
 	    {noreply, State}
     end;

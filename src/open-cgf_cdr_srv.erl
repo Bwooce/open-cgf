@@ -33,6 +33,8 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
 
+-include("../include/open-cgf.hrl").
+
 -record(state, {address, %% reference only, nice for errors
 		cdr_file_handle, %% one file per destination, undefined if closed
 		cdr_timer, %%% TID or undefined
@@ -122,7 +124,7 @@ handle_call({log, Seq_num, Data}, _From, State) ->
     {ok, NewState} = buffer_cdr(Seq_num, Data, State),
     {reply, ok, NewState};
 
-handle_call({log_possible_dup, Seq_num, Data}, State) ->
+handle_call({log_possible_dup, Seq_num, Data}, _From, State) ->
     {ok, NewState} = buffer_duplicate_cdr(Seq_num, Data, State),
     {noreply, NewState};
 
@@ -249,7 +251,7 @@ write_cdr(_SeqNum, Data, State) ->
 							  State#state.cgf_address, 
 							  now(), 
 							  Seqnum, vvvvvvvvvvvvvvvvvvv 
-							  State@state.hostname) 
+							  State#state.hostname) 
 		   Temp_filename = filename:join([State#state.cdr_temp_dir, Filename]),
 		   Final_filename = filename:join([State#state.cdr_dir, Filename]),
 		   ok = filelib:ensure_dir(Temp_filename),
