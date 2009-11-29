@@ -60,8 +60,8 @@ init([]) ->
     {ok, MaxRestarts} = 'open-cgf_config':get_item({'open-cgf',max_restarts}, {integer, 0, 1000}, 10),
     CTLServer = {'CTLServer',{'open-cgf_ctl',start_link,[]},
 		     permanent,2000,worker,['open-cgf_ctl']},
-%%    CDRFileServer = {'CDRServer',{cdr_file_srv,start_link,[]},
-%%		     permanent,2000,worker,[cdr_file_srv]},
+    CDRFileServer = {'CDRServer',{cdr_file_srv,start_link,[]},
+		     permanent,2000,worker,[cdr_file_srv]},
     CGFState = {'CGFState',{'open-cgf_state',start_link,[]},
 		permanent,2000,worker,['open-cgf_state']},
     UDPServer = {'UDPServer',{gtpp_udp_server,start_link,[]},
@@ -75,7 +75,7 @@ init([]) ->
     CDRSupervisor = {'CDRSupervisor',{'open-cgf_cdr_sup',start_link,[]},
 		     permanent,2000,supervisor,['open-cgf_cdr_sup']},
     % max n restarts in the last 30s
-    {ok,{{one_for_one,MaxRestarts,30}, [CTLServer, CDRSupervisor, CGFState, UDPServer] ++ TCPServer}}.
+    {ok,{{one_for_one,MaxRestarts,30}, [CTLServer, CDRSupervisor, CDRFileServer, CGFState, UDPServer] ++ TCPServer}}.
 
 %%====================================================================
 %% Internal functions

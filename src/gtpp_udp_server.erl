@@ -36,7 +36,7 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
 
--record(state, {socket, ip, port, version, known_sources, outstanding_requests, altCGF, t3_response, n3_requests}).
+-record(state, {socket, ip, port, version, known_sources, outstanding_requests, altCGF, t3_response, n3_requests, owner_address}).
 
 %%====================================================================
 %% API
@@ -78,7 +78,7 @@ init([]) ->
 			      end, [], CDFs),			  
     process_flag(trap_exit, true),
     {ok, #state{socket=Socket, ip=IP, port=Port, version=Version, known_sources=orddict:new(), altCGF=AltCGF, 
-		outstanding_requests=Outstanding, t3_response=T3Response, n3_requests=N3Requests}}.
+		outstanding_requests=Outstanding, t3_response=T3Response, n3_requests=N3Requests, owner_address = {udp, IP, Port}}}.
 
 %%--------------------------------------------------------------------
 %% Function: %% handle_call(Request, From, State) -> {reply, Reply, State} |
@@ -121,16 +121,16 @@ handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
 		    {Type, _Content} = hd(Message),
 		    case Type of 
 			send_data_record_packet ->
-			    cdr_file_srv:log({udp, InIP, InPort}, Header#gtpp_header.seqnum, Message),
+			    cdr_file_srv:log({udp, InIP, InPort}, State#state.owner_address, Header#gtpp_header.seqnum, Message),
 			    send_data_record_transfer_response(InSocket, State#state.version, Header#gtpp_header.seqnum,
 							       {InIP, InPort}, 
 							       request_accepted, [Header#gtpp_header.seqnum]),
 				    
 			    {noreply, State};
 			send_potential_duplicate_record_packet ->
-			    Resp = case cdr_file_srv:check_duplicate({udp, InIP, InPort}, Header#gtpp_header.seqnum) of
+			    Resp = case cdr_file_srv:check_duplicate({udp, InIP, InPort}, State#state.owner_address, Header#gtpp_header.seqnum) of
 				       false ->
-					   cdr_file_srv:log_possible_dup({udp, InIP, InPort}, Header#gtpp_header.seqnum, Message),
+					   cdr_file_srv:log_possible_dup({udp, InIP, InPort}, State#state.owner_address, Header#gtpp_header.seqnum, Message),
 					   request_accepted;
 				       true ->
 					   error_logger:warning_msg("Duplicate sequence number ~p from ~s:~B",
@@ -144,7 +144,7 @@ handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
 			cancel_packets ->
 			    {cancel_packets, {sequence_numbers, SeqNums}} = hd(Message),
 			    ?PRINTDEBUG2("Cancelling packets with seqnums [~s]",['open-cgf_logger':format_seqnums(SeqNums)]),
-			    cdr_file_srv:remove_possible_dup({udp, InIP, InPort}, Header#gtpp_header.seqnum, SeqNums),
+			    cdr_file_srv:remove_possible_dup({udp, InIP, InPort}, State#state.owner_address, Header#gtpp_header.seqnum, SeqNums),
 			    send_data_record_transfer_response(InSocket, State#state.version, Header#gtpp_header.seqnum,
 							       {InIP, InPort}, 
 							       request_accepted, [Header#gtpp_header.seqnum]),
@@ -152,7 +152,7 @@ handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
 			release_packets ->
 			    {release_packets, {sequence_numbers, SeqNums}} = (Message),
 			    ?PRINTDEBUG2("Releasing packets with seqnums [~s]",['open-cgf_logger':format_seqnums(SeqNums)]),
-			    cdr_file_srv:commit_possible_dup({udp, InIP, InPort}, Header#gtpp_header.seqnum, SeqNums),
+			    cdr_file_srv:commit_possible_dup({udp, InIP, InPort}, State#state.owner_address, Header#gtpp_header.seqnum, SeqNums),
 			    send_data_record_transfer_response(InSocket, State#state.version, Header#gtpp_header.seqnum,
 							       {InIP, InPort}, 
 							       request_accepted, [Header#gtpp_header.seqnum]),
@@ -189,7 +189,7 @@ handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
 			    %% endpoint is known and has restarted. Sound the klaxxon.
 			    error_logger:warning_msg("CDF ~s:~p has restarted, saving pending CDRs and resetting sequencing",
 						     [inet_parse:ntoa(InIP),InPort]),
-			    cdr_file_srv:reset({udp, InIP, InPort}),
+			    cdr_file_srv:reset({udp, InIP, InPort}, State#state.owner_address),
 			    {noreply, State#state{known_sources=orddict:store({udp, InIP, InPort}, NewCount, State#state.known_sources),
 						  outstanding_requests=NewOutstanding}};
 			error ->

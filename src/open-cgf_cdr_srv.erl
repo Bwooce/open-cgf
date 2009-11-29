@@ -27,7 +27,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0]).
+-export([start_link/3]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -48,12 +48,13 @@
 		% saved configuration
 	        cdr_dir, 
 		cdr_temp_dir,
+		cdr_template,
 	        file_record_limit,
 		file_age_limit_seconds,
 		possible_duplicate_limit_seconds,
 		post_close_command,
-		template,
 		pd_suffix,
+		cgf_address,
 		hostname
 	       }).
 
@@ -64,8 +65,8 @@
 %% Function: start_link() -> {ok,Pid} | ignore | {error,Error}
 %% Description: Starts the server
 %%--------------------------------------------------------------------
-start_link() ->
-    gen_server:start_link(?MODULE, [], []). %% no name, the main server knows us
+start_link(OwnerPID, GSN_address, CGF_address) ->
+    gen_server:start_link(?MODULE, [OwnerPID, GSN_address, CGF_address], []). %% no name, the main server knows us
 
 %%====================================================================
 %% gen_server callbacks
@@ -78,7 +79,8 @@ start_link() ->
 %%                         {stop, Reason}
 %% Description: Initiates the server
 %%--------------------------------------------------------------------
-init([GSN_address]) ->
+init([OwnerPID, GSN_address, CGF_address]) ->
+    ?PRINTDEBUG("Starting, init"),
     {ok, CDR_temp_dir} = 'open-cgf_config':get_item({'open-cgf', cdr_temp_dir}, none), %% crash if not defined. validation TODO
     {ok, CDR_dir} = 'open-cgf_config':get_item({'open-cgf', cdr_dir}, none), %% crash if not defined. validation TODO
     {ok, CDR_file_record_limit} = 'open-cgf_config':get_item({'open-cgf', cdr_file_record_limit}, {integer, 1, 10000}, 100),
@@ -94,6 +96,7 @@ init([GSN_address]) ->
     I2 = trunc((CDR_duplicate_limit*1000)/2),
     {ok, _} = timer:send_interval(I2, {close_duplicates_tick}),
     process_flag(trap_exit, true),
+    OwnerPID ! {newCDRPID, self(), GSN_address}, %% replace the owner's knowledge of us (on supervisor restart)
     {ok, #state{address=GSN_address,
                 cdr_file_handle=undefined,
 		cdr_file_name=[],
@@ -107,8 +110,9 @@ init([GSN_address]) ->
 	        file_record_limit=CDR_file_record_limit, file_age_limit_seconds=CDR_file_age_limit,
 	        possible_duplicate_limit_seconds = CDR_duplicate_limit,
 	        post_close_command=CDR_close_command,
-		template=CDR_template,
+		cdr_template=CDR_template,
 		pd_suffix=CDR_PD_suffix,
+		cgf_address = CGF_address,
 		hostname=HN}}.
 
 %%--------------------------------------------------------------------
@@ -121,7 +125,7 @@ init([GSN_address]) ->
 %% Description: Handling call messages
 %%--------------------------------------------------------------------
 handle_call({log, Seq_num, Data}, _From, State) ->
-    {ok, NewState} = buffer_cdr(Seq_num, Data, State),
+    {ok, NewState} = write_cdr(Seq_num, Data, State),
     {reply, ok, NewState};
 
 handle_call({log_possible_dup, Seq_num, Data}, _From, State) ->
@@ -139,23 +143,23 @@ handle_call(_Request, _From, State) ->
 %% Description: Handling cast messages
 %%--------------------------------------------------------------------
 handle_cast({remove_possible_dup, _Seq_num, Seq_nums}, State) ->
-    NewS = lists:foldl(fun(SSeq_num, OldS) ->
+    NewS = lists:foldl(fun(SSeq_num) ->
 			       State#state{possible_duplicate_list=
 					   lists:keydelete(SSeq_num, 1, State#state.possible_duplicate_list)} %% remove the CDR, if possible
-		      end, S, Seq_nums),		       
+		      end, Seq_nums),		       
     {noreply, NewS};
 
 handle_cast({commit_possible_dup, Seq_num, Seq_nums},State) ->
-    NewS = lists:foldl(fun(SSeq_num, State) ->
+    NewS = lists:foldl(fun(SSeq_num) ->
 			       case lists:keysearch(SSeq_num, 1, State#state.possible_duplicate_list) of
 				   false ->
 				       State; %% wasn't in the list, can't do much
-				   {value, {Seq_num, _TS, Data}} ->
-					    NewState = buffer_cdr(Seq_num, Data, State),
+				   {value, {SSeq_num, _TS, Data}} ->
+					    NewState = write_cdr(SSeq_num, Data, State),
 					    NewState#state{possible_duplicate_list=
 							   lists:keydelete(SSeq_num, 1, NewState#state.possible_duplicate_list)} %% remove the CDR
 				    end
-			    end, S, Seq_nums),
+			    end, Seq_nums),
     {noreply, NewS};
 
 handle_cast({erase_pending_duplicates, SeqNums}, State) -> %% used once the writer process completes
@@ -188,8 +192,8 @@ handle_cast(_Msg, State) ->
 %% Description: Handling all non call/cast messages
 %%--------------------------------------------------------------------
 handle_info({close_cdr, SourceKey}, State) ->
-    NewState = close_source(State),
-    {noreply, NewState};
+    ok = close_cdr_file(State),
+    {noreply, State#state{cdr_file_handle=undefined}};
 
 handle_info({close_duplicates_tick}, State) ->
     spawn_link(?MODULE, flush_duplicates_timer, [State]),
@@ -206,7 +210,7 @@ handle_info({'EXIT', Pid, Cause}, State) ->
 		   State#state{cdr_writer_pid=none};				      
 	       _ -> State
 	   end,
-    {noreply, News};
+    {noreply, NewS};
 
 handle_info(Info, State) ->
     error_logger:warning_msg("Got unhandled info ~p while in state ~p",[Info, State]),
@@ -221,7 +225,7 @@ handle_info(Info, State) ->
 %%--------------------------------------------------------------------
 terminate(Reason, State) ->
     error_logger:info_msg("cdr_file_srv ~p is shutting down for reason: ~p",[State#state.address, Reason]),
-    log_duplicate_cdr(State),
+    ok = close_cdr_file(State),
     ok.
 
 %%--------------------------------------------------------------------
@@ -243,15 +247,15 @@ write_cdr(SourceKey, Seq_num, Data, State) ->
     NewState = write_cdr(Seq_num, Data, State),
     {ok, NewState}.
 
-write_cdr(_SeqNum, Data, State) ->
+write_cdr(SeqNum, Data, State) ->
     NewS = case State#state.cdr_file_handle of
 	       undefined ->
 		   Filename = cdr_filename:build_filename(State#state.cdr_template, 
 							  State#state.address, 
 							  State#state.cgf_address, 
 							  now(), 
-							  Seqnum, vvvvvvvvvvvvvvvvvvv 
-							  State#state.hostname) 
+							  SeqNum, 
+							  State#state.hostname), 
 		   Temp_filename = filename:join([State#state.cdr_temp_dir, Filename]),
 		   Final_filename = filename:join([State#state.cdr_dir, Filename]),
 		   ok = filelib:ensure_dir(Temp_filename),
@@ -272,9 +276,6 @@ write_cdr(_SeqNum, Data, State) ->
 	   end,
     ok = file:write(NewS#state.cdr_file_handle, Data),
     check_file_count(State). %% check_file_count always updates the state
-
-
-
 
 buffer_duplicate_cdr(Seq_num, Data, State) ->
     ?PRINTDEBUG2("Buffering possible duplicate CDR for ~p, seqnum ~B",[State#state.address, Seq_num]),
@@ -309,7 +310,7 @@ check_duplicate_buffer(_,State) ->
 
 check_file_count(State) ->
     if(State#state.cdr_file_count >= State#state.file_record_limit) ->
-	    ?PRINTDEBUG2("Closing cdr file for ~p",[pretty_format_address(State#state.address_]),
+	    ?PRINTDEBUG2("Closing cdr file for ~p",[pretty_format_address(State#state.address)]),
 	    ok = close_cdr_file(State),
 	    execute_post_close_command(State#state.post_close_command, State#state.cdr_final_file_name),
 	    NewS = State#state{cdr_file_handle=undefined,
@@ -328,7 +329,7 @@ close_cdr_file(State) when State#state.cdr_file_handle =:= undefined ->
 close_cdr_file(State) ->
     timer:cancel(State#state.cdr_timer),
     ok = file:close(State#state.cdr_file_handle),
-    ok = file:rename(State#state.cdr_file_name, S#state.cdr_final_file_name).
+    ok = file:rename(State#state.cdr_file_name, State#state.cdr_final_file_name).
 
 execute_post_close_command(none, Filename) ->
     'open-cgf_logger':debug("no cdr_post_close_command for file ~s; skipping",[Filename]),
@@ -365,3 +366,8 @@ pretty_format_address({tcp, {IP1,IP2,IP3,IP4,IP5,IP6,IP7,IP8},Port}) ->
 
     
 
+delete_seqnums(OldSeqNums, []) ->
+%%  ?PRINTDEBUG2("delete_seqnums, leaving with ~p",[OldSeqNums]),
+    OldSeqNums;
+delete_seqnums(OldSeqNums, [SeqNum|Rest]) ->
+    delete_seqnums(lists:keydelete(SeqNum, 1, OldSeqNums), Rest).

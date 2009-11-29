@@ -26,7 +26,7 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0]).
+-export([start_link/0,add/4]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -64,3 +64,7 @@ init([]) ->
 %%====================================================================
 %% Internal functions
 %%====================================================================
+add(Name, OwnerPID, Source, MyAddress) ->
+    CS = {Name,{'open-cgf_cdr_srv',start_link,[OwnerPID, Source, MyAddress]},
+	  permanent,2000,worker,['open-cgf_cdr_srv']},
+    supervisor:start_child('open-cgf_cdr_sup', CS).
