@@ -65,6 +65,4 @@ init([]) ->
 %% Internal functions
 %%====================================================================
 add(Name, OwnerPID, Source, MyAddress) ->
-    CS = {Name,{'open-cgf_cdr_srv',start_link,[OwnerPID, Source, MyAddress]},
-	  permanent,2000,worker,['open-cgf_cdr_srv']},
-    supervisor:start_child('open-cgf_cdr_sup', CS).
+    supervisor:start_child('open-cgf_cdr_sup', [OwnerPID, Source, MyAddress]).

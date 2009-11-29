@@ -250,12 +250,14 @@ write_cdr(SourceKey, Seq_num, Data, State) ->
 write_cdr(SeqNum, Data, State) ->
     NewS = case State#state.cdr_file_handle of
 	       undefined ->
+		   ?PRINTDEBUG2("Makeing filename with ~p, ~p, ~p, ~p, ~p", [State#state.cdr_template, State#state.address, State#state.cgf_address, SeqNum, State#state.hostname]),
 		   Filename = cdr_filename:build_filename(State#state.cdr_template, 
 							  State#state.address, 
 							  State#state.cgf_address, 
 							  now(), 
 							  SeqNum, 
-							  State#state.hostname), 
+							  State#state.hostname),
+		   ?PRINTDEBUG2("Make filename ~p", [Filename]),
 		   Temp_filename = filename:join([State#state.cdr_temp_dir, Filename]),
 		   Final_filename = filename:join([State#state.cdr_dir, Filename]),
 		   ok = filelib:ensure_dir(Temp_filename),
@@ -274,7 +276,9 @@ write_cdr(SeqNum, Data, State) ->
 	       _H -> 
 		   State#state{cdr_file_count=State#state.cdr_file_count+1}
 	   end,
-    ok = file:write(NewS#state.cdr_file_handle, Data),
+    ?PRINTDEBUG2("File opened, going to write to handle ~p with data ~p", [NewS#state.cdr_file_handle, Data]),
+    Result = file:write(NewS#state.cdr_file_handle, Data),
+    ?PRINTDEBUG2("wrote data with result ~p~n~n~n~n", [Result]),
     check_file_count(State). %% check_file_count always updates the state
 
 buffer_duplicate_cdr(Seq_num, Data, State) ->
