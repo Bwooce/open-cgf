@@ -104,7 +104,8 @@ handle_call({check_duplicate, Source, OwnerAddress, Seq_num}, _From, State) ->
 
 handle_call({log, Source, OwnerAddress, Seq_num, Data}, _From, State) ->
     {PID, NewCDRLoggers} = find_logger(Source, OwnerAddress, State#state.cdr_loggers),
-    ok = gen_server:call(PID, {log, Seq_num, Data}),
+    Result = gen_server:call(PID, {log, Seq_num, Data}),
+    ?PRINTDEBUG2("Result from log was ~p", [Result]),
     {reply, ok, State#state{cdr_loggers=NewCDRLoggers}};
 
 handle_call(_Request, _From, State) ->
@@ -193,7 +194,7 @@ find_logger(Source, OwnerAddress, CDRLoggerList) ->
     case proplists:get_value(Source, CDRLoggerList) of
 	undefined ->
 	    {ok, NewPID} = 'open-cgf_cdr_sup':add(self(), self(), Source, OwnerAddress),
-	    {NewPID, [CDRLoggerList | {Source, NewPID}]};
+	    {NewPID, [{Source, NewPID} | CDRLoggerList]};
 	PID ->            
 	    {PID, CDRLoggerList}
     end.

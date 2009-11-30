@@ -96,7 +96,7 @@ init([OwnerPID, GSN_address, CGF_address]) ->
     I2 = trunc((CDR_duplicate_limit*1000)/2),
     {ok, _} = timer:send_interval(I2, {close_duplicates_tick}),
     process_flag(trap_exit, true),
-    OwnerPID ! {newCDRPID, self(), GSN_address}, %% replace the owner's knowledge of us (on supervisor restart)
+    OwnerPID ! {newCDRPID, GSN_address, self()}, %% replace the owner's knowledge of us (on supervisor restart)
     {ok, #state{address=GSN_address,
                 cdr_file_handle=undefined,
 		cdr_file_name=[],
@@ -279,7 +279,8 @@ write_cdr(SeqNum, Data, State) ->
     ?PRINTDEBUG2("File opened, going to write to handle ~p with data ~p", [NewS#state.cdr_file_handle, Data]),
     Result = file:write(NewS#state.cdr_file_handle, Data),
     ?PRINTDEBUG2("wrote data with result ~p~n~n~n~n", [Result]),
-    check_file_count(State). %% check_file_count always updates the state
+    ok = Result,
+    {ok, check_file_count(State)}. %% check_file_count always updates the state
 
 buffer_duplicate_cdr(Seq_num, Data, State) ->
     ?PRINTDEBUG2("Buffering possible duplicate CDR for ~p, seqnum ~B",[State#state.address, Seq_num]),

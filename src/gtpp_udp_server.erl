@@ -121,7 +121,8 @@ handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
 		    {Type, _Content} = hd(Message),
 		    case Type of 
 			send_data_record_packet ->
-			    cdr_file_srv:log({udp, InIP, InPort}, State#state.owner_address, Header#gtpp_header.seqnum, Message),
+			    [{send_data_record_packet, Data} | _Rest] = Message, 
+			    cdr_file_srv:log({udp, InIP, InPort}, State#state.owner_address, Header#gtpp_header.seqnum, Data),
 			    send_data_record_transfer_response(InSocket, State#state.version, Header#gtpp_header.seqnum,
 							       {InIP, InPort}, 
 							       request_accepted, [Header#gtpp_header.seqnum]),
@@ -130,7 +131,8 @@ handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
 			send_potential_duplicate_record_packet ->
 			    Resp = case cdr_file_srv:check_duplicate({udp, InIP, InPort}, State#state.owner_address, Header#gtpp_header.seqnum) of
 				       false ->
-					   cdr_file_srv:log_possible_dup({udp, InIP, InPort}, State#state.owner_address, Header#gtpp_header.seqnum, Message),
+					   {send_data_record_packet, [Data], _} = Message, 
+					   cdr_file_srv:log_possible_dup({udp, InIP, InPort}, State#state.owner_address, Header#gtpp_header.seqnum, Data),
 					   request_accepted;
 				       true ->
 					   error_logger:warning_msg("Duplicate sequence number ~p from ~s:~B",
