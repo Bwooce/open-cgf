@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : gtp_udp_client.erl
 %%% Author  : Bruce Fitzsimons <bruce@fitzsimons.org>
-%%% Description : 
+%%% Description :
 %%%
 %%% Created : 18 Jan 2008 by Bruce Fitzsimons <bruce@fitzsimons.org>
 %%%
@@ -60,7 +60,7 @@ start_link() ->
 %% Description: Initiates the server
 %%--------------------------------------------------------------------
 init([]) ->
-    RSCounter = 'open-cgf_state':get_restart_counter(), 
+    RSCounter = 'open-cgf_state':get_restart_counter(),
     {ok, {IP,Port}} = 'open-cgf_config':get_item({'open-cgf', listen}, ip_port), %% error and crash if no match
     {ok, Socket} = gen_udp:open(Port, [binary,{ip, IP},{recbuf, 300000}, {read_packets, 50}]),
     error_logger:info_msg("open-cgf listening on ~s:~B UDP - session counter ~p~n",[inet_parse:ntoa(IP), Port, RSCounter]),
@@ -75,9 +75,9 @@ init([]) ->
 				      {ok, ERPid, ERSeq} = send_echo_request(Socket, Version, {DestIP,DestPort}, T3Response, N3Requests),
 				      {ok, NAPid, NASeq} = send_node_alive_request(Socket, Version, {DestIP, DestPort}, IP, T3Response, N3Requests),
 				      Acc ++ [{{DestIP, DestPort, NASeq}, NAPid}, {{DestIP, DestPort, ERSeq},ERPid}]
-			      end, [], CDFs),			  
+			      end, [], CDFs),
     process_flag(trap_exit, true),
-    {ok, #state{socket=Socket, ip=IP, port=Port, version=Version, known_sources=orddict:new(), altCGF=AltCGF, 
+    {ok, #state{socket=Socket, ip=IP, port=Port, version=Version, known_sources=orddict:new(), altCGF=AltCGF,
 		outstanding_requests=Outstanding, t3_response=T3Response, n3_requests=N3Requests, owner_address = {udp, IP, Port}}}.
 
 %%--------------------------------------------------------------------
@@ -119,28 +119,28 @@ handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
                     {noreply, State#state{version=Header#gtpp_header.version}};
 		data_record_transfer_request ->
 		    {Type, _Content} = hd(Message),
-		    case Type of 
+		    case Type of
 			send_data_record_packet ->
-			    [{send_data_record_packet, Data} | _Rest] = Message, 
+			    [{send_data_record_packet, Data} | _Rest] = Message,
 			    cdr_file_srv:log({udp, InIP, InPort}, State#state.owner_address, Header#gtpp_header.seqnum, Data),
 			    send_data_record_transfer_response(InSocket, State#state.version, Header#gtpp_header.seqnum,
-							       {InIP, InPort}, 
+							       {InIP, InPort},
 							       request_accepted, [Header#gtpp_header.seqnum]),
-				    
+
 			    {noreply, State};
 			send_potential_duplicate_record_packet ->
 			    Resp = case cdr_file_srv:check_duplicate({udp, InIP, InPort}, State#state.owner_address, Header#gtpp_header.seqnum) of
 				       false ->
-					   {send_data_record_packet, [Data], _} = Message, 
+					   {send_data_record_packet, [Data], _} = Message,
 					   cdr_file_srv:log_possible_dup({udp, InIP, InPort}, State#state.owner_address, Header#gtpp_header.seqnum, Data),
 					   request_accepted;
 				       true ->
 					   error_logger:warning_msg("Duplicate sequence number ~p from ~s:~B",
-								    [Header#gtpp_header.seqnum, inet_parse:ntoa(InIP), InPort]),   
+								    [Header#gtpp_header.seqnum, inet_parse:ntoa(InIP), InPort]),
 					   request_related_to_duplicates_already_fulfilled
 				   end,
 			    send_data_record_transfer_response(InSocket, State#state.version, Header#gtpp_header.seqnum,
-							       {InIP, InPort}, 
+							       {InIP, InPort},
 							       Resp, [Header#gtpp_header.seqnum]),
 			    {noreply, State};
 			cancel_packets ->
@@ -148,7 +148,7 @@ handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
 			    ?PRINTDEBUG2("Cancelling packets with seqnums [~s]",['open-cgf_logger':format_seqnums(SeqNums)]),
 			    cdr_file_srv:remove_possible_dup({udp, InIP, InPort}, State#state.owner_address, Header#gtpp_header.seqnum, SeqNums),
 			    send_data_record_transfer_response(InSocket, State#state.version, Header#gtpp_header.seqnum,
-							       {InIP, InPort}, 
+							       {InIP, InPort},
 							       request_accepted, [Header#gtpp_header.seqnum]),
 			    {noreply, State};
 			release_packets ->
@@ -156,12 +156,12 @@ handle_info({udp, InSocket, InIP, InPort, Packet}, State) ->
 			    ?PRINTDEBUG2("Releasing packets with seqnums [~s]",['open-cgf_logger':format_seqnums(SeqNums)]),
 			    cdr_file_srv:commit_possible_dup({udp, InIP, InPort}, State#state.owner_address, Header#gtpp_header.seqnum, SeqNums),
 			    send_data_record_transfer_response(InSocket, State#state.version, Header#gtpp_header.seqnum,
-							       {InIP, InPort}, 
+							       {InIP, InPort},
 							       request_accepted, [Header#gtpp_header.seqnum]),
 			    {noreply, State};
 			Other ->
 			    send_data_record_transfer_response(InSocket, State#state.version, Header#gtpp_header.seqnum,
-							       {InIP, InPort}, 
+							       {InIP, InPort},
 							       invalid_message_format, [Header#gtpp_header.seqnum]),
 	                    error_logger:error_msg("Ignored data transfer request with invalid content ~p",[Other]),
 			    {noreply, State}
@@ -229,8 +229,8 @@ terminate(Reason, State) ->
     end,
     %% don't bother storing them in a queue, we're shutting down so we're allowed to be messy.
     lists:foreach(fun({{udp, DestIP, DestPort}, _Count}) ->
-			  error_logger:info_msg("Sending redirection to CDF ~s:~p", [inet_parse:ntoa(DestIP), DestPort]), 
-			  send_redirection_request(State#state.socket, State#state.version, {DestIP, DestPort}, State#state.altCGF, 
+			  error_logger:info_msg("Sending redirection to CDF ~s:~p", [inet_parse:ntoa(DestIP), DestPort]),
+			  send_redirection_request(State#state.socket, State#state.version, {DestIP, DestPort}, State#state.altCGF,
 						   State#state.t3_response, State#state.n3_requests)
 		  end, orddict:to_list(State#state.known_sources)),
     error_logger:info_msg("~nopen-cgf udp exiting~n~n"),
@@ -247,33 +247,33 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%--------------------------------------------------------------------
 send_data_record_transfer_response(Socket, Version, SeqNum, {InIP, InPort}, Cause, SeqNums) ->
-    R = gtpp_encode:data_record_transfer_response(Version, SeqNum, Cause, SeqNums, << >>), 
+    R = gtpp_encode:data_record_transfer_response(Version, SeqNum, Cause, SeqNums, << >>),
     ok = gen_udp:send(Socket, InIP, InPort, R).
 
 send_echo_response(Socket, Version, SeqNum, {InIP, InPort}) ->
     RC = 'open-cgf_state':get_restart_counter(),
-    R = gtpp_encode:echo_response(Version, SeqNum, RC, << >>), 
+    R = gtpp_encode:echo_response(Version, SeqNum, RC, << >>),
     ok = gen_udp:send(Socket, InIP, InPort, R).
 
 send_echo_request(Socket, Version, Dest, Timeout, MaxAttempts) ->
     SeqNum = 'open-cgf_state':get_next_seqnum(Dest),
-    R = gtpp_encode:echo_request(Version, SeqNum, << >>), 
+    R = gtpp_encode:echo_request(Version, SeqNum, << >>),
     Pid = send_reliably(Socket, Dest, SeqNum, R, Timeout, MaxAttempts),
     {ok, Pid, SeqNum}.
 
 send_node_alive_request(Socket, Version, Dest, MyAddress, Timeout, MaxAttempts) ->
     SeqNum = 'open-cgf_state':get_next_seqnum(Dest),
-    R = gtpp_encode:node_alive_request(Version, SeqNum, MyAddress, << >>), 
+    R = gtpp_encode:node_alive_request(Version, SeqNum, MyAddress, << >>),
     Pid = send_reliably(Socket, Dest, SeqNum, R, Timeout, MaxAttempts),
     {ok, Pid, SeqNum}.
 
 send_node_alive_response(Socket, Version, SeqNum, {InIP, InPort}) ->
-    R = gtpp_encode:node_alive_response(Version, SeqNum, << >>), 
+    R = gtpp_encode:node_alive_response(Version, SeqNum, << >>),
     ok = gen_udp:send(Socket, InIP, InPort, R).
-    
+
 send_redirection_request(Socket, Version, Dest, AltCGF, Timeout, MaxAttempts) ->
     SeqNum = 'open-cgf_state':get_next_seqnum(Dest),
-    R = case AltCGF of 
+    R = case AltCGF of
 	    none ->
 		gtpp_encode:redirection_request(Version, SeqNum, node_about_to_go_down, << >>);
 	    _ ->
@@ -291,18 +291,18 @@ send_udp(OwnerPid, _Socket, Dest, SeqNum, _Msg, _Timeout, 0) ->
 send_udp(OwnerPid, Socket, {IP,Port}, SeqNum, Msg, Timeout, MaxAttempts) ->
     ok = gen_udp:send(Socket, IP, Port, Msg),
     receive
-	ack -> ok %% die a sweet death knowing that all is right with the world		    
+	ack -> ok %% die a sweet death knowing that all is right with the world
     after Timeout*1000 ->
 	    send_udp(OwnerPid, Socket, {IP,Port}, SeqNum, Msg, Timeout*2, MaxAttempts-1) %% back off on send
     end.
 
 reliable_ack({IP, Port}, SeqNum, List) ->
    case lists:keytake({IP, Port, SeqNum}, 1, List) of
-	{value, {_, Pid}, NewList} -> 
+	{value, {_, Pid}, NewList} ->
 	    Pid ! ack,
-	    NewList;	
-	_ -> 
+	    NewList;
+	_ ->
 	    ?PRINTDEBUG2("ack recvd but no request found, ~p:~p ~p",[IP,Port,SeqNum]),
 	    List
    end.
- 
+

@@ -5,5 +5,5 @@
 		gtpp_tcp_connection, cdr_file_srv, gtpp_encode, gtpp_decode]},
   {registered, []},
   {applications, [kernel, stdlib, sasl]},
-  {mod, {'open-cgf_app',[]}} 
+  {mod, {'open-cgf_app',[]}}
  ]}.

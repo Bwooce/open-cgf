@@ -1,10 +1,10 @@
 %%%-------------------------------------------------------------------
 %%% File    : test_udp.erl
 %%% Author  : Bruce Fitzsimons <bruce@fitzsimons.org>
-%%% Description : 
+%%% Description :
 %%%
 %%% Created : 28 May 2008 by Bruce Fitzsimons <bruce@fitzsimons.org>
-%%% 
+%%%
 %%% Copyright 2008 Bruce Fitzsimons
 %%%
 %%% This file is part of open-cgf.
@@ -47,7 +47,7 @@ simple_test(Origin, Dest) ->
     test_client:expect({simple_header(next_seqnum(), echo_response),'_'}),
     test_client:send(gtpp_encode:echo_request(0, cur_seqnum(), << >>)),
     step(),
-    test_client:expect({simple_header(next_seqnum(), data_record_transfer_response),[{cause, response, 128},{sequence_numbers,[cur_seqnum()]},'_']}), 
+    test_client:expect({simple_header(next_seqnum(), data_record_transfer_response),[{cause, response, 128},{sequence_numbers,[cur_seqnum()]},'_']}),
     test_client:send(dummy_cdr(0,cur_seqnum())),
     step(),
     test_client:expect({'_',[{cause, response, 128},{sequence_numbers,[next_seqnum()]},'_']}), %% requires some refinement...
@@ -86,21 +86,21 @@ complex_test(Origin, Dest) ->
     AfterSeqNum=cur_seqnum(),
     step(),
     %% send simple CDR #1
-    test_client:expect({simple_header(next_seqnum(), data_record_transfer_response),[{cause, response, 128},{sequence_numbers,[cur_seqnum()]},'_']}), 
+    test_client:expect({simple_header(next_seqnum(), data_record_transfer_response),[{cause, response, 128},{sequence_numbers,[cur_seqnum()]},'_']}),
     test_client:send(dummy_cdr(Version,cur_seqnum())),
     step(),
     %% send simple CDR #2
-    test_client:expect({simple_header(next_seqnum(), data_record_transfer_response),[{cause, response, 128},{sequence_numbers,[cur_seqnum()]},'_']}), 
+    test_client:expect({simple_header(next_seqnum(), data_record_transfer_response),[{cause, response, 128},{sequence_numbers,[cur_seqnum()]},'_']}),
     test_client:send(dummy_cdr(Version,cur_seqnum())),
     step(),
     %% cancel some of the outstanding CDRs (pretend we got Ack's from another CGF for these ones)
     SeqNums1 = lists:seq(BeforeSeqNum, AfterSeqNum-25),
-    test_client:expect({simple_header(next_seqnum(), data_record_transfer_response),[{cause, response, 128},{sequence_numbers,[SeqNums1]},'_']}), 
+    test_client:expect({simple_header(next_seqnum(), data_record_transfer_response),[{cause, response, 128},{sequence_numbers,[SeqNums1]},'_']}),
     test_client:send(gtpp_encode:data_record_transfer_request(Version, cur_seqnum(), cancel_packets, SeqNums1, << >>)),
     step(),
     %% release the rest of the outstanding CDRs (pretend we got nothing from another CGF in response to our empty packet)
     SeqNums2 = lists:seq(BeforeSeqNum+25, AfterSeqNum),
-    test_client:expect({simple_header(next_seqnum(), data_record_transfer_response),[{cause, response, 128},{sequence_numbers,[SeqNums2]},'_']}), 
+    test_client:expect({simple_header(next_seqnum(), data_record_transfer_response),[{cause, response, 128},{sequence_numbers,[SeqNums2]},'_']}),
     test_client:send(gtpp_encode:data_record_transfer_request(Version, cur_seqnum(), cancel_packets, SeqNums2, << >>)),
     step(),
     common_shutdown(), %% even if the test fails
@@ -144,7 +144,7 @@ simple_header(Seqnum, Type) ->
 send_dup_cdrs(_Version, 0) ->
     ok;
 send_dup_cdrs(Version, Count) ->
-    test_client:expect({simple_header(next_seqnum(), data_record_transfer_response),[{cause, response, 128},{sequence_numbers,[cur_seqnum()]},'_']}), 
+    test_client:expect({simple_header(next_seqnum(), data_record_transfer_response),[{cause, response, 128},{sequence_numbers,[cur_seqnum()]},'_']}),
     test_client:send(dup_cdr(Version,cur_seqnum())),
     send_dup_cdrs(Version, Count-1).
 
@@ -167,20 +167,20 @@ unknown_cdr_seqnum(SeqNum) ->
      16#07, 16#6d, 16#73, 16#31, 16#2e, 16#61, 16#70, 16#6e, 16#88, 16#02, 16#01, 16#21, 16#a9, 16#08, 16#a0, 16#06,
      16#80, 16#04, 16#65, 16#32, 16#01, 16#52, 16#8b, 16#01, 16#01, 16#ac, 16#82, 16#00, 16#28, 16#30, 16#82, 16#00,
      16#24, 16#82, 16#0c, 16#01, 16#09, 16#11, 16#01, 16#21, 16#01, 16#fa, 16#fa, 16#11, 16#05, 16#fa, 16#fa, 16#83,
-     16#02, 16#02, 16#1e, 16#84, 16#02, 16#0a, 16#0e, 16#85, 16#01, 16#02, 16#86, 16#09, 16#07, 16#08, 16#02, 16#11,   
+     16#02, 16#02, 16#1e, 16#84, 16#02, 16#0a, 16#0e, 16#85, 16#01, 16#02, 16#86, 16#09, 16#07, 16#08, 16#02, 16#11,
      16#10, 16#43, 16#2d, 16#04, 16#00, 16#8d, 16#09, 16#07, 16#08, 16#02, 16#11, 16#10, 16#42, 16#2d, 16#04, 16#00,
-     16#8e, 16#01, 16#01, 16#8f, 16#01, 16#00, 16#92, 16#0e, 16#74, 16#62, 16#31, 16#2d, 16#36, 16#35, 16#30, 16#30,   
-     16#62, 16#2d, 16#31, 16#30, 16#2d, 16#32, 16#b3, 16#30, 16#30, 16#16, 16#06, 16#0c, 16#2b, 16#06, 16#01, 16#04,   
-     16#01, 16#09, 16#0a, 16#30, 16#01, 16#02, 16#02, 16#62, 16#81, 16#01, 16#00, 16#a2, 16#03, 16#02, 16#01, 16#06,   
-     16#30, 16#16, 16#06, 16#0c, 16#2b, 16#06, 16#01, 16#04, 16#01, 16#09, 16#0a, 16#30, 16#01, 16#02, 16#02, 16#63,   
-     16#81, 16#01, 16#00, 16#a2, 16#03, 16#02, 16#01, 16#04, 16#94, 16#04, 16#00, 16#af, 16#c8, 16#1b, 16#95, 16#01,   
-     16#00, 16#96, 16#09, 16#91, 16#01, 16#00, 16#00, 16#00, 16#00, 16#00, 16#00, 16#f0, 16#97, 16#02, 16#01, 16#00,   
-     16#98, 16#01, 16#04, 16#bf, 16#7f, 16#82, 16#00, 16#5b, 16#30, 16#82, 16#00, 16#57, 16#81, 16#01, 16#67, 16#82,   
-     16#03, 16#4d, 16#53, 16#31, 16#83, 16#02, 16#07, 16#d1, 16#84, 16#01, 16#01, 16#85, 16#09, 16#07, 16#08, 16#02,   
-     16#11, 16#10, 16#34, 16#2d, 16#04, 16#00, 16#86, 16#09, 16#07, 16#08, 16#02, 16#11, 16#10, 16#34, 16#2d, 16#04,   
-     16#00, 16#87, 16#01, 16#01, 16#88, 16#04, 16#00, 16#00, 16#00, 16#10, 16#89, 16#0c, 16#01, 16#09, 16#11, 16#01,   
-     16#21, 16#01, 16#fa, 16#fa, 16#11, 16#05, 16#fa, 16#fa, 16#aa, 16#06, 16#80, 16#04, 16#0a, 16#0a, 16#5b, 16#15,   
-     16#8c, 16#02, 16#02, 16#1e, 16#8d, 16#02, 16#0a, 16#0e, 16#8e, 16#09, 16#07, 16#08, 16#02, 16#11, 16#10, 16#34,   
+     16#8e, 16#01, 16#01, 16#8f, 16#01, 16#00, 16#92, 16#0e, 16#74, 16#62, 16#31, 16#2d, 16#36, 16#35, 16#30, 16#30,
+     16#62, 16#2d, 16#31, 16#30, 16#2d, 16#32, 16#b3, 16#30, 16#30, 16#16, 16#06, 16#0c, 16#2b, 16#06, 16#01, 16#04,
+     16#01, 16#09, 16#0a, 16#30, 16#01, 16#02, 16#02, 16#62, 16#81, 16#01, 16#00, 16#a2, 16#03, 16#02, 16#01, 16#06,
+     16#30, 16#16, 16#06, 16#0c, 16#2b, 16#06, 16#01, 16#04, 16#01, 16#09, 16#0a, 16#30, 16#01, 16#02, 16#02, 16#63,
+     16#81, 16#01, 16#00, 16#a2, 16#03, 16#02, 16#01, 16#04, 16#94, 16#04, 16#00, 16#af, 16#c8, 16#1b, 16#95, 16#01,
+     16#00, 16#96, 16#09, 16#91, 16#01, 16#00, 16#00, 16#00, 16#00, 16#00, 16#00, 16#f0, 16#97, 16#02, 16#01, 16#00,
+     16#98, 16#01, 16#04, 16#bf, 16#7f, 16#82, 16#00, 16#5b, 16#30, 16#82, 16#00, 16#57, 16#81, 16#01, 16#67, 16#82,
+     16#03, 16#4d, 16#53, 16#31, 16#83, 16#02, 16#07, 16#d1, 16#84, 16#01, 16#01, 16#85, 16#09, 16#07, 16#08, 16#02,
+     16#11, 16#10, 16#34, 16#2d, 16#04, 16#00, 16#86, 16#09, 16#07, 16#08, 16#02, 16#11, 16#10, 16#34, 16#2d, 16#04,
+     16#00, 16#87, 16#01, 16#01, 16#88, 16#04, 16#00, 16#00, 16#00, 16#10, 16#89, 16#0c, 16#01, 16#09, 16#11, 16#01,
+     16#21, 16#01, 16#fa, 16#fa, 16#11, 16#05, 16#fa, 16#fa, 16#aa, 16#06, 16#80, 16#04, 16#0a, 16#0a, 16#5b, 16#15,
+     16#8c, 16#02, 16#02, 16#1e, 16#8d, 16#02, 16#0a, 16#0e, 16#8e, 16#09, 16#07, 16#08, 16#02, 16#11, 16#10, 16#34,
      16#2d, 16#04, 16#00>>.
 
 ggsn_cdr_fixed() ->
@@ -232,7 +232,7 @@ ggsn_cdr_fixed() ->
 
 %%%----- old stuff
 
-     
+
 start_mockup(Address) -> %% Address is {IP,Port}, IP is {aa,bb,cc,dd}
 %%    {ok, Socket} = gen_udp:open(3385, [binary]),
     Socket = undefined,
@@ -257,10 +257,10 @@ start_mockup(Address) -> %% Address is {IP,Port}, IP is {aa,bb,cc,dd}
     ets:delete(test).
 
 start_replay({IP,Port}, Count) ->
-    {ok, Socket} = gen_udp:open(3385, [binary]),    
+    {ok, Socket} = gen_udp:open(3385, [binary]),
     gen_udp:send(Socket, IP, Port, gtpp_encode:echo_request(2,0,<< >> )),
     start2(IP, Port, Socket, Count).
-    
+
 
 start2(_IP, _Port, Socket, 0) ->
     gen_udp:close(Socket),
@@ -273,27 +273,27 @@ start2(IP, Port, Socket, Count) ->
 	       16#07, 16#6d, 16#73, 16#31, 16#2e, 16#61, 16#70, 16#6e, 16#88, 16#02, 16#01, 16#21, 16#a9, 16#08, 16#a0, 16#06,
 	       16#80, 16#04, 16#65, 16#32, 16#01, 16#52, 16#8b, 16#01, 16#01, 16#ac, 16#82, 16#00, 16#28, 16#30, 16#82, 16#00,
 	       16#24, 16#82, 16#0c, 16#01, 16#09, 16#11, 16#01, 16#21, 16#01, 16#fa, 16#fa, 16#11, 16#05, 16#fa, 16#fa, 16#83,
-	       16#02, 16#02, 16#1e, 16#84, 16#02, 16#0a, 16#0e, 16#85, 16#01, 16#02, 16#86, 16#09, 16#07, 16#08, 16#02, 16#11,   
+	       16#02, 16#02, 16#1e, 16#84, 16#02, 16#0a, 16#0e, 16#85, 16#01, 16#02, 16#86, 16#09, 16#07, 16#08, 16#02, 16#11,
 	       16#10, 16#43, 16#2d, 16#04, 16#00, 16#8d, 16#09, 16#07, 16#08, 16#02, 16#11, 16#10, 16#42, 16#2d, 16#04, 16#00,
-	       16#8e, 16#01, 16#01, 16#8f, 16#01, 16#00, 16#92, 16#0e, 16#74, 16#62, 16#31, 16#2d, 16#36, 16#35, 16#30, 16#30,   
-	       16#62, 16#2d, 16#31, 16#30, 16#2d, 16#32, 16#b3, 16#30, 16#30, 16#16, 16#06, 16#0c, 16#2b, 16#06, 16#01, 16#04,   
-	       16#01, 16#09, 16#0a, 16#30, 16#01, 16#02, 16#02, 16#62, 16#81, 16#01, 16#00, 16#a2, 16#03, 16#02, 16#01, 16#06,   
-	       16#30, 16#16, 16#06, 16#0c, 16#2b, 16#06, 16#01, 16#04, 16#01, 16#09, 16#0a, 16#30, 16#01, 16#02, 16#02, 16#63,   
-	       16#81, 16#01, 16#00, 16#a2, 16#03, 16#02, 16#01, 16#04, 16#94, 16#04, 16#00, 16#af, 16#c8, 16#1b, 16#95, 16#01,   
-	       16#00, 16#96, 16#09, 16#91, 16#01, 16#00, 16#00, 16#00, 16#00, 16#00, 16#00, 16#f0, 16#97, 16#02, 16#01, 16#00,   
-	       16#98, 16#01, 16#04, 16#bf, 16#7f, 16#82, 16#00, 16#5b, 16#30, 16#82, 16#00, 16#57, 16#81, 16#01, 16#67, 16#82,   
-	       16#03, 16#4d, 16#53, 16#31, 16#83, 16#02, 16#07, 16#d1, 16#84, 16#01, 16#01, 16#85, 16#09, 16#07, 16#08, 16#02,   
-	       16#11, 16#10, 16#34, 16#2d, 16#04, 16#00, 16#86, 16#09, 16#07, 16#08, 16#02, 16#11, 16#10, 16#34, 16#2d, 16#04,   
-	       16#00, 16#87, 16#01, 16#01, 16#88, 16#04, 16#00, 16#00, 16#00, 16#10, 16#89, 16#0c, 16#01, 16#09, 16#11, 16#01,   
-	       16#21, 16#01, 16#fa, 16#fa, 16#11, 16#05, 16#fa, 16#fa, 16#aa, 16#06, 16#80, 16#04, 16#0a, 16#0a, 16#5b, 16#15,   
-	       16#8c, 16#02, 16#02, 16#1e, 16#8d, 16#02, 16#0a, 16#0e, 16#8e, 16#09, 16#07, 16#08, 16#02, 16#11, 16#10, 16#34,   
+	       16#8e, 16#01, 16#01, 16#8f, 16#01, 16#00, 16#92, 16#0e, 16#74, 16#62, 16#31, 16#2d, 16#36, 16#35, 16#30, 16#30,
+	       16#62, 16#2d, 16#31, 16#30, 16#2d, 16#32, 16#b3, 16#30, 16#30, 16#16, 16#06, 16#0c, 16#2b, 16#06, 16#01, 16#04,
+	       16#01, 16#09, 16#0a, 16#30, 16#01, 16#02, 16#02, 16#62, 16#81, 16#01, 16#00, 16#a2, 16#03, 16#02, 16#01, 16#06,
+	       16#30, 16#16, 16#06, 16#0c, 16#2b, 16#06, 16#01, 16#04, 16#01, 16#09, 16#0a, 16#30, 16#01, 16#02, 16#02, 16#63,
+	       16#81, 16#01, 16#00, 16#a2, 16#03, 16#02, 16#01, 16#04, 16#94, 16#04, 16#00, 16#af, 16#c8, 16#1b, 16#95, 16#01,
+	       16#00, 16#96, 16#09, 16#91, 16#01, 16#00, 16#00, 16#00, 16#00, 16#00, 16#00, 16#f0, 16#97, 16#02, 16#01, 16#00,
+	       16#98, 16#01, 16#04, 16#bf, 16#7f, 16#82, 16#00, 16#5b, 16#30, 16#82, 16#00, 16#57, 16#81, 16#01, 16#67, 16#82,
+	       16#03, 16#4d, 16#53, 16#31, 16#83, 16#02, 16#07, 16#d1, 16#84, 16#01, 16#01, 16#85, 16#09, 16#07, 16#08, 16#02,
+	       16#11, 16#10, 16#34, 16#2d, 16#04, 16#00, 16#86, 16#09, 16#07, 16#08, 16#02, 16#11, 16#10, 16#34, 16#2d, 16#04,
+	       16#00, 16#87, 16#01, 16#01, 16#88, 16#04, 16#00, 16#00, 16#00, 16#10, 16#89, 16#0c, 16#01, 16#09, 16#11, 16#01,
+	       16#21, 16#01, 16#fa, 16#fa, 16#11, 16#05, 16#fa, 16#fa, 16#aa, 16#06, 16#80, 16#04, 16#0a, 16#0a, 16#5b, 16#15,
+	       16#8c, 16#02, 16#02, 16#1e, 16#8d, 16#02, 16#0a, 16#0e, 16#8e, 16#09, 16#07, 16#08, 16#02, 16#11, 16#10, 16#34,
 	       16#2d, 16#04, 16#00>>,
 
     ok = gen_udp:send(Socket, IP, Port, Packet),
     start2(IP, Port, Socket, Count-1).
 
 replay_real({IP,Port}) ->
-    {ok, Socket} = gen_udp:open(3385, [binary]),    
+    {ok, Socket} = gen_udp:open(3385, [binary]),
     gen_udp:send(Socket, IP, Port, gtpp_encode:echo_request(0,0,<< >> )), %% make sure the recipient is awake
     gen_udp:send(Socket, IP, Port, <<15,2,0,2,0,1,14,7>>), %% echo_response v0 with restart counter of 7
     gen_udp:send(Socket, IP, Port, <<15,240,2,229,0,0,252,2,226,2,1,21,7,1,244,181,
@@ -342,8 +342,8 @@ replay_real({IP,Port}) ->
                               241,151,2,11,0,152,1,1,158,1,1,159,32,8,0,17,33,
                               34,0,33,0,4>>), %% Cisco GGSN sending pre99 CDRs x2
     gen_udp:close(Socket).
-    
-    
+
+
 
 send_cdrs(_Socket, _Address, _Version, 0) ->
     ok;
@@ -383,14 +383,14 @@ send_udp(OwnerPid, _Socket, Dest, SeqNum, _Msg, _Timeout, 0) ->
 send_udp(OwnerPid, Socket, {IP,Port}, SeqNum, Msg, Timeout, MaxAttempts) ->
     ok = gen_udp:send(Socket, IP, Port, Msg),
     receive
-	ack -> ok %% die a sweet death knowing that all is right with the world		    
+	ack -> ok %% die a sweet death knowing that all is right with the world
     after Timeout*1000 ->
 	    send_udp(OwnerPid, Socket, {IP,Port}, SeqNum, Msg, Timeout*2, MaxAttempts-1) %% back off on send
     end.
 
 reliable_ack(Src, SeqNum, List) ->
    case lists:member({Src, SeqNum}, List) of
-	{value, Pid} -> 
+	{value, Pid} ->
 	   Pid ! ack,
 	   lists:delete({Src, SeqNum}, List);
 	_ -> ok

@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : test_tcp.erl
 %%% Author  : bruce@3gtelcotools.com
-%%% Description : 
+%%% Description :
 %%%
 %%% Created : 18 May 2008 by root <root@one.w8trk.com>
 %%%-------------------------------------------------------------------

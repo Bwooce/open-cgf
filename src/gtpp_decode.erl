@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : gtpp_decode.erl
 %%% Author  : Bruce Fitzsimons <bruce@fitzsimons.org>
-%%% Description : 
+%%% Description :
 %%%
 %%% Created : 28 Jan 2008 by Bruce Fitzsimons <bruce@fitzsimons.org>
 %%%
@@ -35,7 +35,7 @@
 %% API
 %%====================================================================
 %%--------------------------------------------------------------------
-%% Function: 
+%% Function:
 %% Description:
 %%--------------------------------------------------------------------
 
@@ -51,7 +51,7 @@ decode_GTPP_header(<<0:3,
 		    SeqNum:16,
 		    _:14/binary,
 		    Rest/binary>>) ->
-    {#gtpp_header{version=0, pt=0, modern_header=0, 
+    {#gtpp_header{version=0, pt=0, modern_header=0,
 		 msg_type=decode_msg_type(MSGType), msg_len=MSGLen, seqnum = SeqNum},
      Rest};
 
@@ -63,7 +63,7 @@ decode_GTPP_header(<<Version:3,
 		    MSGLen:16,
 		    SeqNum:16,
 		    Rest/binary>>) ->
-    {#gtpp_header{version=Version, pt=0, modern_header=1, 
+    {#gtpp_header{version=Version, pt=0, modern_header=1,
 		 msg_type=decode_msg_type(MSGType), msg_len=MSGLen, seqnum = SeqNum},
      Rest}.
 
@@ -71,11 +71,11 @@ decode_GTPP_header(<<Version:3,
 
 decode_message(Bin) ->
     {Header, Rest} = decode_GTPP_header(Bin),
-    case Header#gtpp_header.msg_type of 
+    case Header#gtpp_header.msg_type of
 	unknown ->
 	    % respond with something saying WTF
 	    {error, unknown_msg_type};
-	echo_request -> 
+	echo_request ->
 	    {ok, {Header, [none, Rest]}};
 	echo_response ->
 	    IEs = decode_ies(Rest, Header#gtpp_header.msg_len),
@@ -102,7 +102,7 @@ decode_message(Bin) ->
 	invalid_msg_type ->
 	    %% as per unknown
 	    {error, invalid_msg_type}
-    end. 
+    end.
 
 
 
@@ -121,8 +121,8 @@ decode_msg_type(7) -> redirection_response;
 decode_msg_type(240) -> data_record_transfer_request;
 decode_msg_type(241) -> data_record_transfer_response;
 decode_msg_type(_) -> invalid_msg_type. %% not valid for GTP' at least.
-    
-%% TODO - decide if gtpp_decode should really return a tuple (implying order) 
+
+%% TODO - decide if gtpp_decode should really return a tuple (implying order)
 %% or a tagged list considering we're decoding in any order.
 decode_ies(Bin, Len) ->
     decode_ies2(Bin, Len, []).
@@ -141,7 +141,7 @@ decode_ie(<<1:8, Value:8, Rest/binary>>, _Len) ->
     ?PRINTDEBUG2("Decoding cause ~p", [Value]),
     <<Response_Reject_ind:2, _:6>> = <<Value:8>>,
     ?PRINTDEBUG("Decoded indicators"),
-    case Response_Reject_ind of 
+    case Response_Reject_ind of
 	0 -> {{cause, request, Value}, Rest};
 	1 -> {{cause, reject, Value}, Rest}; %% unknown, treat as reject as per 29.060 ss 7.7.1
 	2 -> {{cause, response, Value}, Rest};
@@ -166,13 +166,13 @@ decode_ie(<<126:8, 4:8, Rest/binary>>, _Len) ->
     {Seq_nums, Rest2} = decode_ie(Rest,0),
     {{release_packets, Seq_nums}, Rest2};
 
-%% Charging Gateway Address (or Alternate) 
+%% Charging Gateway Address (or Alternate)
 decode_ie(<<251:8, 4:16, Address:4/binary, Rest/binary>>, _Len) ->
     {{ipv4, Address}, Rest};
 decode_ie(<<251:8, 16:16, Address:16/binary, Rest/binary>>, _Len) ->
     {{ipv6, Address}, Rest};
 
-%% Recommended Gateway Address (or Alternate) 
+%% Recommended Gateway Address (or Alternate)
 decode_ie(<<254:8, 4:16, Address:4/binary, Rest/binary>>, _Len) ->
     {{ipv4, Address}, Rest};
 decode_ie(<<254:8, 16:16, Address:16/binary, Rest/binary>>, _Len) ->
@@ -188,7 +188,7 @@ decode_ie(<<253:8, Len:16, SeqNum:16, Rest/binary>>, _Len) ->
 
 decode_ie(<<252:8, Rest/binary>>, Len) -> %% pre  R99 GTP' CDR transfer
     {DRPs, Rest2} = decode_ie_data_record_packet(<<252:8, Rest/binary>>, Len),
-    {{send_data_record_packet, DRPs}, Rest2};    
+    {{send_data_record_packet, DRPs}, Rest2};
 
 decode_ie(<<Other:8, Rest/binary>>, Len) when Other > 127 ->
     ?PRINTDEBUG2("Got private_extension (>127) type ~p of length ~p",[Other, Len]),
@@ -201,8 +201,8 @@ decode_ie(<<Other:8, Length:16, Rest/binary>>, _Len) ->
     {{private_extension, Other, Length, Content}, Rest2}.
 
 
-decode_ie_data_record_packet(<<252:8, 
-			      Len:16, 
+decode_ie_data_record_packet(<<252:8,
+			      Len:16,
 			      Num_records:8,
 			      $1:8, %% only ASN.1 BER (!) encoded as ascii
 			      Rec_format:2/binary,
@@ -210,8 +210,8 @@ decode_ie_data_record_packet(<<252:8,
     _Decoded_rec_format = decode_ie_data_record_format_version(Rec_format), %% Not going to do anything special with it right now.
     decode_cdrs(Len, Num_records, Rest);
 
-decode_ie_data_record_packet(<<252:8, 
-			      Len:16, 
+decode_ie_data_record_packet(<<252:8,
+			      Len:16,
 			      Num_records:8,
 			      1:8, %% only ASN.1 BER (!) encoded as decimal. ONE OF THESE IS A BUG...encode uses $1
 			      Rec_format:2/binary,
@@ -225,7 +225,7 @@ decode_ie_sequence_numbers(Rest, 0, List) ->
     {{sequence_numbers, List}, Rest};
 decode_ie_sequence_numbers(<<SeqNum:16, Rest/binary>>, Len, List) ->
     decode_ie_sequence_numbers(Rest, Len-2, List ++ [SeqNum]).
-    
+
 
 decode_ie_data_record_format_version(<<App_ID:4, Release_ID:4, Version:8>>) ->
     {App_ID, Release_ID, Version}.
@@ -246,10 +246,10 @@ decode_cdrs(Total_len, Num_records, <<Rec_len:16, Rest/binary>>, Acc) ->
     <<CDR:Rec_len/binary, Rest2/binary>> = Rest,
     ?PRINTDEBUG("Extracted CDR"),
     decode_cdrs(Total_len-Rec_len, Num_records-1, Rest2, Acc ++ [CDR]).
-    
-	   
-	    
-test() -> 
+
+
+
+test() ->
   Msg = <<15,240,2,229,0,0,252,2,226,2,1,21,7,1,244,181,
                               130,1,240,128,1,19,131,7,53,0,114,82,134,8,241,
                               164,6,128,4,166,179,11,40,133,3,77,7,212,166,

@@ -34,7 +34,7 @@ endif
 MODULES=open-cgf open-cgf_app open-cgf_sup gtpp_decode gtpp_encode open-cgf_state gtpp_udp_server open-cgf_ctl open-cgf_logger open-cgf_config gtpp_tcp_server gtpp_tcp_connection cdr_filename open-cgf_cdr_sup cdr_file_srv open-cgf_cdr_srv
 
 
-EBIN_FILES=$(MODULES:%=../ebin/%.$(EMULATOR)) 
+EBIN_FILES=$(MODULES:%=../ebin/%.$(EMULATOR))
 
 ERLC_FLAGS+=-W +debug_info $(DEBUG_FLAGS) -I../include -pa ../ebin
 
@@ -42,7 +42,7 @@ ERLC_FLAGS+=-W +debug_info $(DEBUG_FLAGS) -I../include -pa ../ebin
 # Targets
 #
 
-all: $(EBIN_FILES) 
+all: $(EBIN_FILES)
 
 debug:
 	$(MAKE) TYPE=debug

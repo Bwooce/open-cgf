@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : cdr_filename.erl
 %%% Author  : root <root@one.w8trk.com>
-%%% Description : 
+%%% Description :
 %%%
 %%% Created : 24 Jul 2008 by root <root@one.w8trk.com>
 %%%-------------------------------------------------------------------
@@ -18,7 +18,7 @@
 %% API
 %%====================================================================
 %%--------------------------------------------------------------------
-%% Function: 
+%% Function:
 %% Description:
 %%--------------------------------------------------------------------
 build_pd_filename(Template, PD_suffix, Hostname, GSN_address, CGF_address, Now, Seqnum) ->
@@ -36,14 +36,14 @@ test() ->
     "CDR-19700101T000000-myhost-10_151_33_1-6666-000022.asn1" = build_filename(
 								  "CDR-%utc_datetime%-%hostname%-%gsn_ip_port%-%seqnum%.asn1",
 								  {udp, {10,151,33,1}, 6666},
-								  {udp, {10,151,33,2},3333}, 
+								  {udp, {10,151,33,2},3333},
 								  {0,0,0},
 								  22,
 								  "myhost"),
     "CDR-19700101T000000-10_151_33_2-tcp-000000.asn1" = build_filename(
 							  "CDR-%utc_datetime%-%cgf_ip_port%-%seqnum%.asn1",
 							  {tcp, {10,151,33,1}, 6666},
-							  {tcp, {10,151,33,2},3333}, 
+							  {tcp, {10,151,33,2},3333},
 							  {0,0,0},
 							  0,
 							  "myhost"),

@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : gtp_tcp_server.erl
 %%% Author  : Bruce Fitzsimons <bruce@fitzsimons.org>
-%%% Description : 
+%%% Description :
 %%%
 %%% Created : 22 May 2008 by Bruce Fitzsimons <bruce@fitzsimons.org>
 %%%
@@ -71,7 +71,7 @@ init([]) ->
 					  {ok, {error, _Reason}} ->  Acc;
 					  {ok, Pid} -> Acc ++ [Pid]
 				      end
-			      end, [], CDFs),			  
+			      end, [], CDFs),
     {ok, #state{ip=IP, port=Port, listener=ListenPid, configured_cdfs=CDFs, connections=Connections}}.
 
 

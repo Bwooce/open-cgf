@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : gtp.hrl
 %%% Author  : Bruce Fitzsimons <bruce@fitzsimons.org>
-%%% Description : 
+%%% Description :
 %%%
 %%% Created : 28 Jan 2008 by Bruce Fitzsimons <bruce@fitzsimons.org>
 %%%

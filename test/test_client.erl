@@ -1,10 +1,10 @@
 %%%-------------------------------------------------------------------
 %%% File    : test_client.erl
 %%% Author  : Bruce Fitzsimons <bruce@fitzsimons.org>
-%%% Description : 
+%%% Description :
 %%%
 %%% Created : 13 May 2008 by Bruce Fitzsimons <bruce@fitzsimons.org>
-%%% 
+%%%
 %%% Copyright 2008 Bruce Fitzsimons
 %%%
 %%% This file is part of open-cgf.
@@ -87,7 +87,7 @@ init([{Proto, {SourceIP, SourcePort}}]) ->
     process_flag(trap_exit, true),
     case Proto of
 	tcp -> ok;
-	udp -> 
+	udp ->
 	    {ok, _Pid} = test_udp_client:start_link(SourceIP, SourcePort)
     end,
     {ok, #state{proto=Proto, source={SourceIP,SourcePort}}}.
@@ -140,7 +140,7 @@ handle_call(_Request, _From, State) ->
     Reply = ok,
     {reply, Reply, State}.
 
-    %% send errors if unmatched expectations 
+    %% send errors if unmatched expectations
 
 %%--------------------------------------------------------------------
 %% Function: handle_cast(Msg, State) -> {noreply, State} |
@@ -166,7 +166,7 @@ handle_info({Proto, Pid, Message}, State) ->
     case State#state.auto_respond_flag of
 	true ->
 	    {Header, Body} = Message,
-	    case Header#gtpp_header.msg_type of 
+	    case Header#gtpp_header.msg_type of
 		echo_request ->
 		    ?PRINTDEBUG("***Got echo_request - autoresponding"),
 		    Msg = gtpp_encode:echo_response(Header#gtpp_header.version, Header#gtpp_header.seqnum, 0, << >>),
@@ -188,7 +188,7 @@ handle_info({Proto, Pid, Message}, State) ->
 	_ ->
 	    process_expected(Message, State)
     end;
-	     
+
 
 handle_info(_Info, State) ->
     {noreply, State}.
@@ -234,7 +234,7 @@ test_client_send(Message, State) ->
 	    ok = test_udp_client:send(State#state.dest, Message)
     end.
 
-	    
+
 find_match(Message, ExpectedList) ->
     find_match(Message, ExpectedList, []).
 
@@ -243,9 +243,9 @@ find_match(_Message, [], Output) ->
 find_match(Message, [Pattern|Rest], Output) ->
     case ets:test_ms(Message, [{Pattern,[],['$_']}]) of
 	{ok, false} -> find_match(Message, Rest, Output ++ [Pattern]);
-	{ok, Match} ->  
+	{ok, Match} ->
 	    ?PRINTDEBUG2("***Matched*** ~p",[Match]),
 	    Output ++ Rest; %% delete the pattern we just matched
 	_ -> find_match(Message, Rest, Output ++ [Pattern])
     end.
-		
+

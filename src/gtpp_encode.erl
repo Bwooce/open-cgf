@@ -1,10 +1,10 @@
 %%%-------------------------------------------------------------------
 %%% File    : gtpp_encode.erl
 %%% Author  : Bruce Fitzsimons <bruce@fitzsimons.org>
-%%% Description : 
+%%% Description :
 %%%
 %%% Created : 28 Jan 2008 by Bruce Fitzsimons <bruce@fitzsimons.org>
-%%% 
+%%%
 %%% Copyright 2008 Bruce Fitzsimons
 %%%
 %%% This file is part of open-cgf.
@@ -52,7 +52,7 @@ modern_header(Header) ->
     MsgType = Header#gtpp_header.msg_type,
     MsgLen = Header#gtpp_header.msg_len,
     SeqNum = Header#gtpp_header.seqnum,
-    <<Version:3, 
+    <<Version:3,
       0:1, %% GTP'
       7:3, %% defined as unused, all 1's
       0:1, %% unset and ignored if > GTPv0
@@ -90,13 +90,13 @@ old_header(Header) ->
 
 echo_request(Version, SeqNum, Extensions) ->
     ?PRINTDEBUG("echo_request"),
-    H = header(#gtpp_header{version=Version, pt=0, modern_header=1, msg_type=msg_type(echo_request), 
+    H = header(#gtpp_header{version=Version, pt=0, modern_header=1, msg_type=msg_type(echo_request),
 			  msg_len=size(Extensions), seqnum=SeqNum}),
-    <<H/binary, Extensions/binary>>.    
+    <<H/binary, Extensions/binary>>.
 
 echo_response(Version, SeqNum, Counter, Extensions) ->
     ?PRINTDEBUG("echo_response"),
-    H = header(#gtpp_header{version=Version, pt=0, modern_header=1, msg_type=msg_type(echo_response), 
+    H = header(#gtpp_header{version=Version, pt=0, modern_header=1, msg_type=msg_type(echo_response),
 			    msg_len=size(Extensions)+2, %% 2 for the restart_counter
 			    seqnum=SeqNum}),
     B = restart_counter(Counter),
@@ -109,7 +109,7 @@ version_not_supported(Version, SeqNum) ->
 node_alive_request(Version, SeqNum, NodeAddress, Extensions) ->
     ?PRINTDEBUG("node_alive_request/4"),
     NA = charging_gateway_address(NodeAddress),
-    H = header(#gtpp_header{version=Version, pt=0, modern_header=1, msg_type=msg_type(node_alive_request), 
+    H = header(#gtpp_header{version=Version, pt=0, modern_header=1, msg_type=msg_type(node_alive_request),
 			    msg_len=size(NA)+size(Extensions), seqnum=SeqNum}),
     <<H/binary, NA/binary, Extensions/binary>>.
 
@@ -117,13 +117,13 @@ node_alive_request(Version, SeqNum, NodeAddress, AltNodeAddress, Extensions) ->
         ?PRINTDEBUG("node_alive_request/5"),
     NA = charging_gateway_address(NodeAddress),
     ANA = charging_gateway_address(AltNodeAddress),
-    H = header(#gtpp_header{version=Version, pt=0, modern_header=1, msg_type=msg_type(node_alive_request), 
+    H = header(#gtpp_header{version=Version, pt=0, modern_header=1, msg_type=msg_type(node_alive_request),
 			    msg_len=size(NA)+size(ANA)+size(Extensions), seqnum=SeqNum}),
     <<H/binary, NA/binary, ANA/binary, Extensions/binary>>.
 
 node_alive_response(Version, SeqNum, Extensions) ->
     ?PRINTDEBUG("node_alive_response/3"),
-    H = header(#gtpp_header{version=Version, pt=0, modern_header=1, msg_type=msg_type(node_alive_response), 
+    H = header(#gtpp_header{version=Version, pt=0, modern_header=1, msg_type=msg_type(node_alive_response),
 			    msg_len=size(Extensions), seqnum=SeqNum}),
     <<H/binary, Extensions/binary>>.
 
@@ -148,45 +148,45 @@ redirection_request(Version, SeqNum, Cause, NodeAddress, AltNodeAddress, Extensi
     redirection_request2(Version, SeqNum, B).
 
 redirection_request2(Version, SeqNum, B) ->
-    H = header(#gtpp_header{version=Version, pt=0, modern_header=1, msg_type=msg_type(redirection_request), 
+    H = header(#gtpp_header{version=Version, pt=0, modern_header=1, msg_type=msg_type(redirection_request),
 			    msg_len=size(B), seqnum=SeqNum}),
     <<H/binary, B/binary>>.
 
 redirection_response(Version, SeqNum) ->
     ?PRINTDEBUG("redirection_response/2"),
     redirection_response(Version, SeqNum, request_accepted, << >>).
-redirection_response(Version, SeqNum, Cause, Extensions)->    
+redirection_response(Version, SeqNum, Cause, Extensions)->
     ?PRINTDEBUG("redirection_response/4"),
     C = cause(Cause),
     B = <<1:8, C:8, Extensions/binary>>,
-    H = header(#gtpp_header{version=Version, pt=0, modern_header=1, msg_type=msg_type(redirection_response), 
+    H = header(#gtpp_header{version=Version, pt=0, modern_header=1, msg_type=msg_type(redirection_response),
 			    msg_len=size(B), seqnum=SeqNum}),
     <<H/binary, B/binary>>.
 
 data_record_transfer_request(Version, SeqNum, data_record_packet, DataRecordPackets, Extensions) ->
     ?PRINTDEBUG("data_record_transfer_request/5 - data_record_packet"),
     B = <<126:8, 1:8, DataRecordPackets/binary, Extensions/binary>>,
-    H = header(#gtpp_header{version=Version, pt=0, modern_header=1, msg_type=msg_type(data_record_transfer_request), 
+    H = header(#gtpp_header{version=Version, pt=0, modern_header=1, msg_type=msg_type(data_record_transfer_request),
 			    msg_len=size(B), seqnum=SeqNum}),
     <<H/binary, B/binary>>;
 data_record_transfer_request(Version, SeqNum, send_potential_duplicate_data_record_packet, DataRecordPackets, Extensions) ->
     ?PRINTDEBUG("data_record_transfer_request/5 - potential_dup_data_record_packet"),
     B = <<126:8, 2:8, DataRecordPackets/binary, Extensions/binary>>,
-    H = header(#gtpp_header{version=Version, pt=0, modern_header=1, msg_type=msg_type(data_record_transfer_request), 
+    H = header(#gtpp_header{version=Version, pt=0, modern_header=1, msg_type=msg_type(data_record_transfer_request),
 			    msg_len=size(B), seqnum=SeqNum}),
     <<H/binary, B/binary>>;
 data_record_transfer_request(Version, SeqNum, cancel_packets, SeqNums, Extensions) ->
     ?PRINTDEBUG("data_record_transfer_request/5 - cancel_packets"),
     C = cancelled_seqnums(SeqNums),
     B = <<126:8, 3:8, C/binary, Extensions/binary>>,
-    H = header(#gtpp_header{version=Version, pt=0, modern_header=1, msg_type=msg_type(data_record_transfer_request), 
+    H = header(#gtpp_header{version=Version, pt=0, modern_header=1, msg_type=msg_type(data_record_transfer_request),
 			    msg_len=size(B), seqnum=SeqNum}),
     <<H/binary, B/binary>>;
 data_record_transfer_request(Version, SeqNum, release_packets, SeqNums, Extensions) ->
     ?PRINTDEBUG("data_record_transfer_request/5 - release_packets"),
     R = released_seqnums(SeqNums),
     B = <<126:8, 4:8, R/binary, Extensions/binary>>,
-    H = header(#gtpp_header{version=Version, pt=0, modern_header=1, msg_type=msg_type(data_record_transfer_request), 
+    H = header(#gtpp_header{version=Version, pt=0, modern_header=1, msg_type=msg_type(data_record_transfer_request),
 			    msg_len=size(B), seqnum=SeqNum}),
     <<H/binary, B/binary>>.
 
@@ -195,7 +195,7 @@ data_record_transfer_response(Version, SeqNum, Cause, RequestsResponded, Extensi
     C = cause(Cause),
     R = requests_responded(RequestsResponded),
     B = <<1:8, C:8, R/binary, Extensions/binary>>,
-    H = header(#gtpp_header{version=Version, pt=0, modern_header=1, msg_type=msg_type(data_record_transfer_response), 
+    H = header(#gtpp_header{version=Version, pt=0, modern_header=1, msg_type=msg_type(data_record_transfer_response),
 			    msg_len=size(B), seqnum=SeqNum}),
     <<H/binary, B/binary>>.
 
@@ -210,23 +210,23 @@ cancelled_seqnums(List) ->
     L = size(Bin),
     <<250:8, L:16, Bin/binary>>.
 
-released_seqnums(List) ->    
+released_seqnums(List) ->
     Bin = list_to_binary([<<X:16>> || X <- List]),
     L = size(Bin),
     <<249:8, L:16, Bin/binary>>.
-    
+
 
 charging_gateway_address({IP1, IP2, IP3, IP4}) ->
     <<251:8, 4:16, IP1:8, IP2:8, IP3:8, IP4:8>>;
 charging_gateway_address({IP1, IP2, IP3, IP4, IP5, IP6, IP7, IP8}) ->
-    <<251:8, 16:16, IP1:16, IP2:16, IP3:16, IP4:16, 
-                   IP5:16, IP6:16, IP7:16, IP8:16>>. 
+    <<251:8, 16:16, IP1:16, IP2:16, IP3:16, IP4:16,
+                   IP5:16, IP6:16, IP7:16, IP8:16>>.
 
 recommended_node_address({IP1, IP2, IP3, IP4}) ->
     <<254:8, 4:16, IP1:8, IP2:8, IP3:8, IP4:8>>;
 recommended_node_address({IP1, IP2, IP3, IP4, IP5, IP6, IP7, IP8}) ->
-    <<254:8, 16:16, IP1:16, IP2:16, IP3:16, IP4:16, 
-                   IP5:16, IP6:16, IP7:16, IP8:16>>. 
+    <<254:8, 16:16, IP1:16, IP2:16, IP3:16, IP4:16,
+                   IP5:16, IP6:16, IP7:16, IP8:16>>.
 
 msg_type(echo_request) -> 1;
 msg_type(echo_response) -> 2;
@@ -289,8 +289,8 @@ ie_data_record_packet(Records, Record_format, Extensions) ->
     Len = size(CDRs),
     Num_records = length(Records),
     Enc_rec_format = ie_data_record_format_version(Record_format),
-    <<252:8, 
-     Len:16, 
+    <<252:8,
+     Len:16,
      Num_records:8,
      $1:8, %% only ASN.1 BER (!) encoded as ascii
      Enc_rec_format:2/binary,

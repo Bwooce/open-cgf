@@ -1,10 +1,10 @@
 %%%-------------------------------------------------------------------
 %%% File    : test_tcp_client.erl
 %%% Author  : Bruce Fitzsimons <bruce@fitzsimons.org>
-%%% Description : 
+%%% Description :
 %%%
 %%% Created : 13 May 2008 by Bruce Fitzsimons <bruce@fitzsimons.org>
-%%% 
+%%%
 %%% Copyright 2008 Bruce Fitzsimons
 %%%
 %%% This file is part of open-cgf.
@@ -159,13 +159,13 @@ get_lengths(Buffer) ->
     case catch gtpp_decode:decode_GTPP_header(Buffer) of
 	{'EXIT', _} ->
 	    no_header;
-	{H, Rest} ->	
+	{H, Rest} ->
 	    ?PRINTDEBUG2("Got ~p~n,~p",[H,Rest]),
 	    {size(Buffer) - size(Rest), H#gtpp_header.msg_len}
     end.
 
 
-%%% some parts of the gtp' understanding escape gtpp_decode here. sob. 
+%%% some parts of the gtp' understanding escape gtpp_decode here. sob.
 decode(<< >>, no_header, State) ->
     {noreply, State};
 decode(<<0:3, 0:1, _:3, 0:1, Rest/binary>>, no_header, State) when size(Rest) < 19 ->

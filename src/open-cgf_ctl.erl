@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : open-cgf_ctl.erl
 %%% Author  : Bruce Fitzsimons <bruce@fitzsimons.org>
-%%% Description : 
+%%% Description :
 %%%
 %%% Created : 27 Jan 2008 by Bruce Fitzsimons <bruce@fitzsimons.org>
 %%%
@@ -41,14 +41,14 @@
 %%====================================================================
 %% API
 %%====================================================================
-%% 
-%% 
+%%
+%%
 stop(_) ->
     ?PRINTDEBUG("open-cgf_ctl STOP"),
     {ok, Port} = get_port(?CONTROL_FILE),
     send(Port, "stop"),
     init:stop().
-    
+
 %%--------------------------------------------------------------------
 %% Function: start_link() -> {ok,Pid} | ignore | {error,Error}
 %% Description: Starts the server
@@ -133,7 +133,7 @@ listen(Filename) ->
     case gen_udp:open(0, [{ip, {127,0,0,1}}]) of
 	{ok, Socket} ->
 	    case inet:port(Socket) of
-                {ok, Port} ->		    
+                {ok, Port} ->
 		    file:write_file(Filename, io_lib:format("~w.", [Port])),
 		    {ok, F} = file:read_file_info(Filename),
 		    ok = file:write_file_info(Filename, F#file_info{mode = 8#00600}),

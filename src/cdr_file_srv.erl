@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : cdr_file_srv.erl
 %%% Author  : Bruce Fitzsimons <bruce@fitzsimons.org>
-%%% Description : 
+%%% Description :
 %%%
 %%% Created : 27 Jan 2008 by Bruce Fitzsimons <bruce@fitzsimons.org>
 %%%
@@ -52,7 +52,7 @@ start_link() ->
 check_duplicate(SourceKey, OwnerAddress, Seq_num) ->
     gen_server:call(?SERVER, {check_duplicate, SourceKey, OwnerAddress, Seq_num}).
 
-log(Source, OwnerAddress, Seq_num, Data) -> 
+log(Source, OwnerAddress, Seq_num, Data) ->
     gen_server:call(?SERVER, {log, Source, OwnerAddress, Seq_num, Data}).
 
 log_possible_dup(SourceKey, OwnerAddress, Seq_num, Data) ->
@@ -70,7 +70,7 @@ flush_pending_duplicates(SourceKey, OwnerAddress, Seq_nums) ->
 reset(SourceKey, OwnerAddress) ->
     gen_server:cast(?SERVER, {reset, SourceKey, OwnerAddress}).
 
-print_state() ->    
+print_state() ->
     gen_server:cast(?SERVER, {print_state}).
 
 %%====================================================================
@@ -190,16 +190,16 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 %%% Internal functions
 
-find_logger(Source, OwnerAddress, CDRLoggerList) ->    
+find_logger(Source, OwnerAddress, CDRLoggerList) ->
     case proplists:get_value(Source, CDRLoggerList) of
 	undefined ->
 	    {ok, NewPID} = 'open-cgf_cdr_sup':add(self(), self(), Source, OwnerAddress),
 	    {NewPID, [{Source, NewPID} | CDRLoggerList]};
-	PID ->            
+	PID ->
 	    {PID, CDRLoggerList}
     end.
 
 
 update_logger(PID, Source, CDRLoggerList) ->
     lists:keyreplace(Source, 1, CDRLoggerList, {Source, PID}).
-				      
+

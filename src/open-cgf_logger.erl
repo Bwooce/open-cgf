@@ -47,18 +47,18 @@ error(Msg)      -> log(error(),Msg,[]).
 error(Msg,Args) -> log(error(),Msg,Args).
 
 warning(Msg)    -> log(warning(), Msg, []).
-warning(Msg, Args) -> log(warning(), Msg, Args).    
+warning(Msg, Args) -> log(warning(), Msg, Args).
 
 info(Msg)      -> log(info(),Msg,[]).
 info(Msg,Args) -> log(info(),Msg,Args).
 
-debug(Msg)       -> 
+debug(Msg)       ->
     ?PRINTDEBUG(Msg),
     log(debug(), Msg, []).
-debug(Msg, Args) -> 
+debug(Msg, Args) ->
     ?PRINTDEBUG2(Msg, Args),
     log(debug(), Msg, Args).
-    
+
 
 log(Level,Msg,Args) when is_integer(Level),is_list(Msg),is_list(Args) ->
     error_logger:error_report(syslog, {{?WHO,Level},{Msg,Args}}).
@@ -143,7 +143,7 @@ init_syslog({IP,Port}) ->
 %% Func: handle_event/2
 %% Returns: {ok, State}                                |
 %%          {swap_handler, Args1, State1, Mod2, Args2} |
-%%          remove_handler                              
+%%          remove_handler
 %%----------------------------------------------------------------------
 handle_event({error_report,_GLPid,{_Pid,syslog,{{Who,Level},{Msg,Args}}}},S) ->
     try lists:flatten(level(Level) ++ ":" ++ io_lib:format(Msg,Args)) of
@@ -186,14 +186,14 @@ handle_event({info_report,_GLPid,{_Pid, Type, Report}},State) when is_atom(Type)
     {ok,State};
 %% ignore other events, such as progress events.
 handle_event(Msg, State) ->
-    io:format("open-cgf_logger - going to log something like ~p",[Msg]),    
+    io:format("open-cgf_logger - going to log something like ~p",[Msg]),
     {ok, State}.
 
 %%----------------------------------------------------------------------
 %% Func: handle_call/2
 %% Returns: {ok, Reply, State}                                |
 %%          {swap_handler, Reply, Args1, State1, Mod2, Args2} |
-%%          {remove_handler, Reply}                            
+%%          {remove_handler, Reply}
 %%----------------------------------------------------------------------
 handle_call(_Request, State) ->
     Reply = ok,
@@ -203,7 +203,7 @@ handle_call(_Request, State) ->
 %% Func: handle_info/2
 %% Returns: {ok, State}                                |
 %%          {swap_handler, Args1, State1, Mod2, Args2} |
-%%          remove_handler                              
+%%          remove_handler
 %%----------------------------------------------------------------------
 handle_info(_Info, State) ->
     {ok, State}.
@@ -230,7 +230,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% priorities/facilities are encoded into a single 32-bit
 %% quantity, where the bottom 3 bits are the priority (0-7)
-%% and the top 28 bits are the facility (0-big number).    
+%% and the top 28 bits are the facility (0-big number).
 
 do_send(Sock, Host,Port,{Who,Level,Msg}) ->
     Packet = "<" ++ i2l(Level) ++ "> " ++ a2l(Who) ++ ": " ++ Msg,
