@@ -18,7 +18,7 @@ help()
         echo "            -heart     --  monitor and restart if application exits"
 
         echo ""
-	
+
 	echo " stopping open-cgf"
 	echo "       open-cgf -stop"
 
@@ -29,7 +29,7 @@ interactive="";
 trace="";
 heart="";
 
-while [ $# -gt 0 ] 
+while [ $# -gt 0 ]
 do
       arg=$1
       shift;

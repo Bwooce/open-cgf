@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : gtp_tcp_connection.erl
 %%% Author  : Bruce Fitzsimons <bruce@fitzsimons.org>
-%%% Description : 
+%%% Description :
 %%%
 %%% Created : 22 May 2008 by Bruce Fitzsimons <bruce@fitzsimons.org>
 %%%
@@ -50,7 +50,7 @@ start({IP, Port}) -> %% connect to this when started
 
 start(Socket) -> %% incoming connection already accepted
     gen_server:start_link(?MODULE, [Socket], []).
-    
+
 
 %%====================================================================
 %% gen_server callbacks
@@ -73,7 +73,7 @@ init([{IP, Port}]) ->
 	    error_logger:info_msg("open-cgf connected from ~s:~B to CDF ~s:~B TCP", [inet_parse:ntoa(State#state.ip), State#state.port,
 										     inet_parse:ntoa(IP), Port]),
 	    SeqNum = 'open-cgf_state':get_next_seqnum({tcp, IP, Port}),
-	    R = gtpp_encode:node_alive_request(State#state.version, SeqNum, State#state.ip, << >>), 
+	    R = gtpp_encode:node_alive_request(State#state.version, SeqNum, State#state.ip, << >>),
 	    ok = gen_tcp:send(Socket, R),
 	    process_flag(trap_exit, true),
 	    {ok, State#state{socket=Socket, dest_ip=IP, dest_port=Port, last_request_ts=greg_now(), buffer= << >>}};
@@ -91,7 +91,7 @@ init([Socket]) ->
     error_logger:info_msg("open-cgf connected from ~s:~B to CDF ~s:~B TCP", [inet_parse:ntoa(State#state.ip), State#state.port,
 									     inet_parse:ntoa(IP), Port]),
     SeqNum = 'open-cgf_state':get_next_seqnum({tcp, IP, Port}),
-    R = gtpp_encode:node_alive_request(State#state.version, SeqNum, State#state.ip, << >>), 
+    R = gtpp_encode:node_alive_request(State#state.version, SeqNum, State#state.ip, << >>),
     ok = gen_tcp:send(Socket, R),
     process_flag(trap_exit, true),
     {ok, State#state{socket=Socket, dest_ip=IP, dest_port=Port, last_request_ts=greg_now(), buffer = << >>}}.
@@ -142,9 +142,9 @@ handle_info({tcp_closed, _Socket}, State) ->
 
 handle_info({tcp_error, _Socket, Reason}, State) ->
     error_logger:warning_msg("open-cgf connection error ~p from ~s:~B to CDF ~s:~B TCP - closing", [Reason,
-												    inet_parse:ntoa(State#state.ip), 
+												    inet_parse:ntoa(State#state.ip),
 												    State#state.port,
-												    inet_parse:ntoa(State#state.dest_ip), 
+												    inet_parse:ntoa(State#state.dest_ip),
 												    State#state.dest_port]),
     {stop, normal, State#state{socket=undefined}};
 
@@ -166,7 +166,7 @@ handle_info(Info, State) ->
     error_logger:warning_msg("Got unhandled info ~p while in state ~p",[Info, State]),
     {noreply, State}.
 
-    
+
 
 %%--------------------------------------------------------------------
 %% Function: terminate(Reason, State) -> void()
@@ -178,10 +178,10 @@ handle_info(Info, State) ->
 terminate(Reason, State) ->
     cdr_file_srv:reset({tcp, State#state.dest_ip, State#state.dest_port}),
     case State#state.socket of
-	undefined ->  
+	undefined ->
 	    ok;
 	_ ->
-	    SeqNum = 'open-cgf_state':get_next_seqnum({tcp, State#state.dest_ip, State#state.dest_port}),	    
+	    SeqNum = 'open-cgf_state':get_next_seqnum({tcp, State#state.dest_ip, State#state.dest_port}),
 	    send_redirection_request(State#state.socket, State#state.version, SeqNum,
 				    State#state.altCGF),
 	    catch gen_tcp:close(State#state.socket)
@@ -200,24 +200,24 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 
 send_data_record_transfer_response(Socket, Version, SeqNum, Cause, SeqNums) ->
-    R = gtpp_encode:data_record_transfer_response(Version, SeqNum, Cause, SeqNums, << >>), 
+    R = gtpp_encode:data_record_transfer_response(Version, SeqNum, Cause, SeqNums, << >>),
     ok = gen_tcp:send(Socket, R).
 
 send_echo_response(Socket, Version, SeqNum) ->
     RC = 'open-cgf_state':get_restart_counter(),
-    R = gtpp_encode:echo_response(Version, SeqNum, RC, << >>), 
+    R = gtpp_encode:echo_response(Version, SeqNum, RC, << >>),
     ok = gen_tcp:send(Socket, R).
 
 send_echo_request(Socket, SeqNum, Version) ->
-    R = gtpp_encode:echo_request(Version, SeqNum, << >>), 
+    R = gtpp_encode:echo_request(Version, SeqNum, << >>),
     ok = gen_tcp:send(Socket, R).
 
 send_node_alive_response(Socket, Version, SeqNum) ->
-    R = gtpp_encode:node_alive_response(Version, SeqNum, << >>), 
+    R = gtpp_encode:node_alive_response(Version, SeqNum, << >>),
     ok = gen_tcp:send(Socket, R).
-    
+
 send_redirection_request(Socket, Version, SeqNum, AltCGF) ->
-    R = case AltCGF of 
+    R = case AltCGF of
 	    none ->
 		gtpp_encode:redirection_request(Version, SeqNum, node_about_to_go_down, << >>);
 	    _ ->
@@ -225,7 +225,7 @@ send_redirection_request(Socket, Version, SeqNum, AltCGF) ->
 	end,
     ok = gen_tcp:send(Socket, R).
 
- 
+
 greg_now() ->
     calendar:datetime_to_gregorian_seconds({date(), time()}).
 
@@ -233,13 +233,13 @@ get_lengths(Buffer) ->
     case catch gtpp_decode:decode_GTPP_header(Buffer) of
 	{'EXIT', _} ->
 	    no_header;
-	{H, Rest} ->	
+	{H, Rest} ->
 	    ?PRINTDEBUG2("Got ~p~n,~p",[H,Rest]),
 	    {size(Buffer) - size(Rest), H#gtpp_header.msg_len}
     end.
 
 
-%%% some parts of the gtp' understanding escape gtpp_decode here. sob. 
+%%% some parts of the gtp' understanding escape gtpp_decode here. sob.
 decode(<< >>, no_header, State) ->
     {noreply, State};
 decode(<<0:3, 0:1, _:3, 0:1, Rest/binary>>, no_header, State) when size(Rest) < 19 ->
@@ -269,12 +269,12 @@ decode(Packet, {HLen, Length}, State) -> %% if we get here then we might have en
 		    decode(Remainder, Remainder_len, State#state{version=Header#gtpp_header.version});
 		data_record_transfer_request ->
 		    {Type, _Content} = hd(Message),
-		    case Type of 
+		    case Type of
 			send_data_record_packet ->
 			    cdr_file_srv:log(SourceKey, Header#gtpp_header.seqnum, Message),
 			    send_data_record_transfer_response(State#state.socket, State#state.version, Header#gtpp_header.seqnum,
 							       request_accepted, [Header#gtpp_header.seqnum]),
-			    decode(Remainder, Remainder_len, State);			    
+			    decode(Remainder, Remainder_len, State);
 			send_potential_duplicate_record_packet ->
 			    Resp = case cdr_file_srv:check_duplicate(SourceKey, Header#gtpp_header.seqnum) of
 				       false ->
@@ -282,8 +282,8 @@ decode(Packet, {HLen, Length}, State) -> %% if we get here then we might have en
 					   request_accepted;
 				       true ->
 					   error_logger:warning_msg("Duplicate sequence number ~p from ~s:~B",
-								    [Header#gtpp_header.seqnum, 
-								     inet_parse:ntoa(State#state.dest_ip), State#state.dest_port]),   
+								    [Header#gtpp_header.seqnum,
+								     inet_parse:ntoa(State#state.dest_ip), State#state.dest_port]),
 					   request_related_to_duplicates_already_fulfilled
 				   end,
 			    send_data_record_transfer_response(State#state.socket, State#state.version, Header#gtpp_header.seqnum,

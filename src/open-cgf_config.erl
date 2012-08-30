@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : open-cgf_config.erl
 %%% Author  : Bruce Fitzsimons <bruce@fitzsimons.org>
-%%% Description : 
+%%% Description :
 %%%
 %%% Created : 18 Jan 2008 by Bruce Fitzsimons <bruce@fitzsimons.org>
 %%%
@@ -52,7 +52,7 @@ get_item({App,Tag}, Validation_type) ->
     end.
 
 get_item({App,Tag}, Validation_type, Default_value) ->
-    case get_item({App,Tag}, Validation_type) of 
+    case get_item({App,Tag}, Validation_type) of
 	{error, _Reason} ->
 	    error_logger:warning_msg("CONFIG: ~p Tag: \'~p\' - Value defaulting to ~p~n",[App,Tag,Default_value]),
 	    {ok, Default_value};
@@ -113,7 +113,7 @@ validate_item({string, Min, Max}, Value) ->
     {error, lists:flatten(io_lib:format("string value must be between ~B and ~B, not ~p",[Min, Max, length(Value)]))}.
 
 parse_IP_port({IP,Port}) when Port >=0, Port < 65536 ->
-    case parse_IP_address(IP) of 
+    case parse_IP_address(IP) of
 	{ok, ParsedIP} ->
 	    {ok, {ParsedIP, Port}};
 	{error, Err} ->

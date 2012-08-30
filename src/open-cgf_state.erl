@@ -1,9 +1,9 @@
 %%%-------------------------------------------------------------------
 %%% File    : open-cgf_state.erl
 %%% Author  : Bruce Fitzsimons <bruce@fitzsimons.org>
-%%% Description : 
+%%% Description :
 %%%
-%%% Copyright 2008 Bruce Fitzsimons 
+%%% Copyright 2008 Bruce Fitzsimons
 %%%
 %%% This file is part of open-cgf.
 %%%
@@ -73,7 +73,7 @@ init([]) ->
     {ok, _} = dets:open_file(cgf_state_dets, [{ram_file, true}]), %% we're storing nothing that isn't sync'd (for the moment)
     {_, RC} = case dets:lookup(cgf_state_dets, restart_counter) of
 		  [C] -> C;
-		  [] -> 
+		  [] ->
 		      ok = dets:insert(cgf_state_dets, {restart_counter, 0}),
 		      {nothing, 0}
 	      end,
@@ -114,7 +114,7 @@ handle_call(_Request, _From, State) ->
 %% Description: Handling cast messages
 %%--------------------------------------------------------------------
 
-    
+
 handle_cast(_Msg, State) ->
     {noreply, State}.
 

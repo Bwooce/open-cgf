@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : open-cgf_cdr_srv.erl
 %%% Author  : Bruce Fitzsimons <bruce@fitzsimons.org>
-%%% Description : CDR server for the UDP server or one of the TCP 
+%%% Description : CDR server for the UDP server or one of the TCP
 %%%               servers spawned from the listen socket.
 %%%
 %%% Created : 26 July 2008 by Bruce Fitzsimons <bruce@fitzsimons.org>
@@ -42,11 +42,11 @@
 		cdr_final_file_name, %% filename in the final directory
 		cdr_file_ts, %% timestamp of file open (so we know when to close it, if fairly idle)
 		cdr_file_count, %% record count of cdr file (so we know when to close it, if under load)
-		possible_duplicate_list, %% [{seq_num, ts, [CDRs]}] of acknowledged but unwritten CDRs. Written eventually even if not confirmed. 
+		possible_duplicate_list, %% [{seq_num, ts, [CDRs]}] of acknowledged but unwritten CDRs. Written eventually even if not confirmed.
 		cdr_writer_pid, %% PID of the cdr writing task, so we know if it died/we can't write more
 
 		% saved configuration
-	        cdr_dir, 
+	        cdr_dir,
 		cdr_temp_dir,
 		cdr_template,
 	        file_record_limit,
@@ -84,13 +84,13 @@ init([OwnerPID, GSN_address, CGF_address]) ->
     {ok, CDR_temp_dir} = 'open-cgf_config':get_item({'open-cgf', cdr_temp_dir}, none), %% crash if not defined. validation TODO
     {ok, CDR_dir} = 'open-cgf_config':get_item({'open-cgf', cdr_dir}, none), %% crash if not defined. validation TODO
     {ok, CDR_file_record_limit} = 'open-cgf_config':get_item({'open-cgf', cdr_file_record_limit}, {integer, 1, 10000}, 100),
-    {ok, CDR_file_age_limit} = 'open-cgf_config':get_item({'open-cgf', cdr_file_age_limit_seconds}, {integer, 1, 3600}, 60), 
-    {ok, CDR_duplicate_limit} = 'open-cgf_config':get_item({'open-cgf', cdr_possible_duplicate_limit_seconds}, {integer, 1, 3600}, 60), 
+    {ok, CDR_file_age_limit} = 'open-cgf_config':get_item({'open-cgf', cdr_file_age_limit_seconds}, {integer, 1, 3600}, 60),
+    {ok, CDR_duplicate_limit} = 'open-cgf_config':get_item({'open-cgf', cdr_possible_duplicate_limit_seconds}, {integer, 1, 3600}, 60),
     {ok, CDR_close_command} = 'open-cgf_config':get_item({'open-cgf', cdr_post_close_command}, none, none), %% validation TODO
     {ok, CDR_template} = 'open-cgf_config':get_item({'open-cgf', cdr_filename_template}, {string, 1, 100},
-						    "CDR-%hostname%-%gsn_ip_port%-%utc_datetime%.asn1"), 
-    {ok, CDR_PD_suffix} = 'open-cgf_config':get_item({'open-cgf', cdr_dup_filename_suffix}, {string, 1, 100}, 
-						     ".potential_duplicate"), 
+						    "CDR-%hostname%-%gsn_ip_port%-%utc_datetime%.asn1"),
+    {ok, CDR_PD_suffix} = 'open-cgf_config':get_item({'open-cgf', cdr_dup_filename_suffix}, {string, 1, 100},
+						     ".potential_duplicate"),
     {ok,HN} = inet:gethostname(),
     %% set the callback timer to close files after time limit is up
     I2 = trunc((CDR_duplicate_limit*1000)/2),
@@ -105,7 +105,7 @@ init([OwnerPID, GSN_address, CGF_address]) ->
 		cdr_file_count=0,
 		possible_duplicate_list=[],
 		cdr_writer_pid=none,
-		
+
 		cdr_dir=CDR_dir, cdr_temp_dir=CDR_temp_dir,
 	        file_record_limit=CDR_file_record_limit, file_age_limit_seconds=CDR_file_age_limit,
 	        possible_duplicate_limit_seconds = CDR_duplicate_limit,
@@ -146,7 +146,7 @@ handle_cast({remove_possible_dup, _Seq_num, Seq_nums}, State) ->
     NewS = lists:foldl(fun(SSeq_num) ->
 			       State#state{possible_duplicate_list=
 					   lists:keydelete(SSeq_num, 1, State#state.possible_duplicate_list)} %% remove the CDR, if possible
-		      end, Seq_nums),		       
+		      end, Seq_nums),
     {noreply, NewS};
 
 handle_cast({commit_possible_dup, Seq_num, Seq_nums},State) ->
@@ -170,7 +170,7 @@ handle_cast({erase_pending_duplicates, SeqNums}, State) -> %% used once the writ
 
 handle_cast(reset, State) ->
     %% write all the CDRs, close the files
-    Pid = spawn_link(?MODULE, log_duplicate_cdr, [State]), 
+    Pid = spawn_link(?MODULE, log_duplicate_cdr, [State]),
     close_cdr_file(State),
     NewS = State#state{cdr_file_handle=undefined,
 		       cdr_timer=undefined,
@@ -207,7 +207,7 @@ handle_info({'EXIT', Pid, Cause}, State) ->
     NewS = case State#state.cdr_writer_pid of
 	       Pid ->
 		   error_logger:error_msg("CDR Writer for ~p exited with ~p",[State#state.address, Cause]),
-		   State#state{cdr_writer_pid=none};				      
+		   State#state{cdr_writer_pid=none};
 	       _ -> State
 	   end,
     {noreply, NewS};
@@ -251,11 +251,11 @@ write_cdr(SeqNum, Data, State) ->
     NewS = case State#state.cdr_file_handle of
 	       undefined ->
 		   ?PRINTDEBUG2("Makeing filename with ~p, ~p, ~p, ~p, ~p", [State#state.cdr_template, State#state.address, State#state.cgf_address, SeqNum, State#state.hostname]),
-		   Filename = cdr_filename:build_filename(State#state.cdr_template, 
-							  State#state.address, 
-							  State#state.cgf_address, 
-							  now(), 
-							  SeqNum, 
+		   Filename = cdr_filename:build_filename(State#state.cdr_template,
+							  State#state.address,
+							  State#state.cgf_address,
+							  now(),
+							  SeqNum,
 							  State#state.hostname),
 		   ?PRINTDEBUG2("Make filename ~p", [Filename]),
 		   Temp_filename = filename:join([State#state.cdr_temp_dir, Filename]),
@@ -273,7 +273,7 @@ write_cdr(SeqNum, Data, State) ->
 				   cdr_file_ts=greg_now(),
 				   cdr_file_count=1},
 		   N;
-	       _H -> 
+	       _H ->
 		   State#state{cdr_file_count=State#state.cdr_file_count+1}
 	   end,
     ?PRINTDEBUG2("File opened, going to write to handle ~p with data ~p", [NewS#state.cdr_file_handle, Data]),
@@ -369,7 +369,7 @@ pretty_format_address({tcp, {IP1,IP2,IP3,IP4},Port}) ->
 pretty_format_address({tcp, {IP1,IP2,IP3,IP4,IP5,IP6,IP7,IP8},Port}) ->
     io_lib:format("~B_~B_~B_~B_~B_~B_~B_~B-tcp",[IP1, IP2, IP3, IP4, IP5, IP6, IP7, IP8]).
 
-    
+
 
 delete_seqnums(OldSeqNums, []) ->
 %%  ?PRINTDEBUG2("delete_seqnums, leaving with ~p",[OldSeqNums]),

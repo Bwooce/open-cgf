@@ -1,7 +1,7 @@
 %%%-------------------------------------------------------------------
 %%% File    : open-cgf_sup.erl
 %%% Author  : Bruce Fitzsimons <bruce@fitzsimons.org>
-%%% Description : 
+%%% Description :
 %%%
 %%% Created : 27 Jan 2008 by Bruce Fitzsimons <bruce@fitzsimons.org>
 %%%
@@ -50,9 +50,9 @@ start_link(_) ->
 %% Func: init(Args) -> {ok,  {SupFlags,  [ChildSpec]}} |
 %%                     ignore                          |
 %%                     {error, Reason}
-%% Description: Whenever a supervisor is started using 
-%% supervisor:start_link/[2,3], this function is called by the new process 
-%% to find out about restart strategy, maximum restart frequency and child 
+%% Description: Whenever a supervisor is started using
+%% supervisor:start_link/[2,3], this function is called by the new process
+%% to find out about restart strategy, maximum restart frequency and child
 %% specifications.
 %%--------------------------------------------------------------------
 init([]) ->

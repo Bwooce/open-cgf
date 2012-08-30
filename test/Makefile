@@ -34,7 +34,7 @@ endif
 MODULES=test_client test_udp_client test_tcp_client test_udp test_tcp
 
 
-EBIN_FILES=$(MODULES:%=../ebin/%.$(EMULATOR)) 
+EBIN_FILES=$(MODULES:%=../ebin/%.$(EMULATOR))
 
 ERLC_FLAGS+=-W +debug_info $(DEBUG_FLAGS) -I../include -pa ../ebin
 
@@ -42,7 +42,7 @@ ERLC_FLAGS+=-W +debug_info $(DEBUG_FLAGS) -I../include -pa ../ebin
 # Targets
 #
 
-all: $(EBIN_FILES) 
+all: $(EBIN_FILES)
 
 debug:
 	$(MAKE) TYPE=debug
